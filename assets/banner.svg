@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="420" viewBox="0 0 1600 420" role="img" aria-label="Deckadence — indulgently animated HTML presentations">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F4D88A"/>
+      <stop offset=".55" stop-color="#E8C46B"/>
+      <stop offset="1" stop-color="#C9A14E"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".42" r=".75">
+      <stop offset="0" stop-color="#1A1815"/>
+      <stop offset="1" stop-color="#0D0C0B"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1600" height="420" rx="18" fill="url(#glow)"/>
+  <rect x="14" y="14" width="1572" height="392" rx="12" fill="none" stroke="#E8C46B" stroke-opacity=".22" stroke-width="1.5"/>
+
+  <!-- mini world: stations on a monotone staircase, camera path flying through -->
+  <g stroke="url(#gold)" fill="none" stroke-width="2">
+    <rect x="96"  y="96"  width="64" height="36" rx="4" stroke-opacity=".9"/>
+    <rect x="208" y="96"  width="64" height="36" rx="4" stroke-opacity=".55"/>
+    <rect x="208" y="170" width="64" height="36" rx="4" stroke-opacity=".3"/>
+    <path d="M 128 114 C 168 114, 200 114, 240 114 C 268 114, 240 146, 240 188"
+          stroke-dasharray="5 7" stroke-opacity=".8" stroke-linecap="round"/>
+    <circle cx="240" cy="188" r="4" fill="url(#gold)" stroke="none"/>
+  </g>
+  <g stroke="url(#gold)" fill="none" stroke-width="2">
+    <rect x="1440" y="288" width="64" height="36" rx="4" stroke-opacity=".9"/>
+    <rect x="1328" y="288" width="64" height="36" rx="4" stroke-opacity=".55"/>
+    <rect x="1328" y="214" width="64" height="36" rx="4" stroke-opacity=".3"/>
+    <path d="M 1472 306 C 1432 306, 1400 306, 1360 306 C 1332 306, 1360 274, 1360 232"
+          stroke-dasharray="5 7" stroke-opacity=".8" stroke-linecap="round"/>
+    <circle cx="1360" cy="232" r="4" fill="url(#gold)" stroke="none"/>
+  </g>
+
+  <!-- sparkles -->
+  <g fill="#E8C46B">
+    <path d="M 358 78 l 4 12 12 4 -12 4 -4 12 -4 -12 -12 -4 12 -4 z" opacity=".85"/>
+    <path d="M 1245 330 l 4 12 12 4 -12 4 -4 12 -4 -12 -12 -4 12 -4 z" opacity=".85"/>
+    <path d="M 1290 96 l 3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3 z" opacity=".5"/>
+    <path d="M 310 320 l 3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3 z" opacity=".5"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="800" y="218" text-anchor="middle" fill="#F4F1EA"
+        font-family="Georgia, 'Times New Roman', serif" font-style="italic" font-size="124" letter-spacing="2">
+    Deckadence
+  </text>
+
+  <!-- flourish -->
+  <path d="M 470 258 C 590 246, 740 270, 880 256 C 1000 246, 1080 262, 1130 254"
+        fill="none" stroke="url(#gold)" stroke-width="3" stroke-linecap="round"/>
+
+  <text x="800" y="318" text-anchor="middle" fill="#E8C46B"
+        font-family="ui-sans-serif, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" letter-spacing="7" font-weight="600">
+    INDULGENTLY ANIMATED HTML PRESENTATIONS
+  </text>
+  <text x="800" y="366" text-anchor="middle" fill="#6E695F"
+        font-family="ui-sans-serif, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" letter-spacing="3">
+    ONE FILE · NO FRAMEWORK · A CAMERA OVER A WORLD
+  </text>
+</svg>

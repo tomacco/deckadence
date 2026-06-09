@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deckadence — indulgently animated HTML presentations</title>
+<meta name="description" content="A Claude skill for building cinematic, single-file HTML presentations: a camera over a world, choreographed reveals, self-drawing SVG. No framework, no build step.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..700&family=Inter:wght@400..700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* ============================================================
+     DECKADENCE landing — itself a Deckadence deck.
+     Direction: Midnight Luxe (near-black velvet, ivory Fraunces,
+     one gold accent). The landing IS the demo.
+     ============================================================ */
+  :root {
+    --bg:       #0D0C0B;
+    --ink:      #F4F1EA;
+    --ink-soft: #C9C4B8;
+    --muted:    #6E695F;
+    --accent:   #E8C46B;
+    --line:     rgba(244,241,234,.14);
+    --font-display: "Fraunces", serif;
+    --font-body: "Inter", sans-serif;
+    --font-mono: "JetBrains Mono", monospace;
+    --ease-expo: cubic-bezier(.82,0,.18,1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); }
+  body { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+
+  #viewport { position: fixed; inset: 0; overflow: hidden; background: var(--bg); transition: background-color .55s var(--ease-expo); }
+  body.light-hud, body.light-hud #viewport { background: var(--ink); }   /* letterbox follows tone */
+  #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+
+  .station {
+    position: absolute; width: 1920px; height: 1080px;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    text-align: center; padding: 110px 130px;
+  }
+  .station.invert { background: var(--ink); color: var(--bg); }
+  /* gold reads rich on black but washes out on ivory — darken it on inverted stations */
+  .station.invert .eyebrow, .station.invert .display em { color: #9A7B24; }
+
+  .eyebrow { font-weight: 600; text-transform: uppercase; letter-spacing: .38em; font-size: 15px; color: var(--accent); }
+  .display {
+    font-family: var(--font-display); font-weight: 500;
+    line-height: .98; letter-spacing: -.02em; font-size: 170px;
+    font-variation-settings: "opsz" 144;
+  }
+  .display em { font-style: italic; font-weight: 400; color: var(--accent); }
+  .display.mega { font-size: 252px; line-height: .9; }
+  .display.md { font-size: 130px; }
+  .lead { font-size: 30px; line-height: 1.45; color: var(--ink-soft); max-width: 1060px; font-weight: 400; }
+  .station.invert .lead { color: #4A453C; }
+  .clip { overflow: hidden; display: block; }
+  .lineInner { display: block; will-change: transform; }
+
+  /* HUD */
+  #hud {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 34px; pointer-events: none;
+    font-size: 12px; letter-spacing: .16em; color: var(--ink); transition: color .55s ease;
+  }
+  body.light-hud #hud { color: var(--bg); }
+  #hud .counter { font-variant-numeric: tabular-nums; opacity: .55; font-family: var(--font-mono); }
+  #hud .hint { text-transform: uppercase; opacity: .4; }
+  #rail { display: flex; gap: 10px; pointer-events: auto; }
+  #rail .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .22; cursor: pointer; transition: opacity .3s, transform .3s; }
+  #rail .dot:hover { opacity: .6; }
+  #rail .dot.active { opacity: 1; transform: scale(1.4); background: var(--accent); }
+  #railtip { position: fixed; bottom: 52px; transform: translateX(-50%); z-index: 51; background: var(--ink); color: var(--bg); font-size: 12px; letter-spacing: .06em; padding: 6px 12px; border-radius: 4px; opacity: 0; pointer-events: none; transition: opacity .25s; }
+  #railtip.show { opacity: 1; }
+  .gh-corner { position: fixed; top: 26px; right: 32px; z-index: 50; font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); text-decoration: none; border: 1px solid var(--line); padding: 10px 18px; border-radius: 999px; transition: color .3s, border-color .3s; }
+  .gh-corner:hover { color: var(--accent); border-color: var(--accent); }
+  body.light-hud .gh-corner { color: #4A453C; border-color: rgba(0,0,0,.2); }
+
+  /* S1 hero */
+  #s1 .eyebrow { margin-bottom: 56px; }
+  #s1 .flourish { margin-top: 38px; }
+  #s1 .tagline { margin-top: 44px; }
+  #s1 .keyhint { margin-top: 70px; font-size: 15px; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }
+  #s1 .keyhint b { color: var(--accent); font-weight: 600; }
+
+  /* S3 graph */
+  #s3 .display { margin-bottom: 20px; }
+  #s3 .graph { margin-top: 50px; }
+  #s3 .node rect { fill: rgba(244,241,234,.03); stroke: var(--ink); stroke-width: 2; }
+  #s3 .node text { fill: var(--ink); font-family: var(--font-mono); font-size: 20px; letter-spacing: .08em; text-anchor: middle; }
+  #s3 .node .sub { fill: var(--muted); font-size: 13px; letter-spacing: .14em; }
+  #s3 .wire { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+  #s3 .pulse { fill: var(--accent); opacity: 0; }
+
+  /* S4 directions (inverted) */
+  #s4 .display { margin-bottom: 18px; }
+  #s4 .dirs { margin-top: 54px; display: flex; flex-direction: column; gap: 22px; width: 1340px; }
+  #s4 .dir { display: flex; align-items: center; gap: 30px; padding: 16px 28px; border: 1px solid rgba(0,0,0,.16); }
+  #s4 .dir .name { width: 360px; text-align: left; font-weight: 600; font-size: 24px; letter-spacing: .01em; }
+  #s4 .dir .who { flex: 1; text-align: left; font-size: 16px; color: #8A8478; letter-spacing: .03em; }
+  #s4 .dir .sw { display: flex; gap: 8px; }
+  #s4 .dir .sw i { width: 34px; height: 34px; border-radius: 50%; display: block; border: 1px solid rgba(0,0,0,.12); }
+
+  /* S5 install (terminal) */
+  #s5 .display { margin-bottom: 56px; }
+  #s5 .term {
+    width: 1320px; text-align: left; background: #131210; border: 1px solid var(--line);
+    border-radius: 14px; box-shadow: 0 60px 120px -50px rgba(0,0,0,.9); overflow: hidden;
+  }
+  #s5 .term .bar { display: flex; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  #s5 .term .bar i { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); opacity: .5; }
+  #s5 .term .bar i:first-child { background: var(--accent); opacity: 1; }
+  #s5 .term pre { padding: 34px 38px 42px; font-family: var(--font-mono); font-size: 23px; line-height: 1.9; color: var(--ink-soft); white-space: pre-wrap; }
+  #s5 .term .p { color: var(--accent); }
+  #s5 .term .c { color: var(--muted); }
+  #s5 .term .caret { display: inline-block; width: 12px; height: 26px; background: var(--accent); vertical-align: -4px; animation: blink 1.05s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #s5 .after { margin-top: 40px; font-size: 21px; color: var(--ink-soft); }
+  #s5 .after em { color: var(--accent); font-style: italic; font-family: var(--font-display); font-size: 24px; }
+
+  /* S6 finale */
+  #s6 .heart { margin: 46px 0 10px; }
+  #s6 .heart path { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  #s6 .credits { margin-top: 46px; font-size: 18px; letter-spacing: .04em; color: var(--muted); line-height: 2; }
+  #s6 .credits a { color: var(--ink-soft); text-decoration: none; border-bottom: 1px solid var(--line); }
+  #s6 .credits a:hover { color: var(--accent); border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<a class="gh-corner" href="https://github.com/tomacco/deckadence" target="_blank" rel="noopener">GitHub ↗</a>
+
+<div id="viewport">
+  <div id="world">
+
+    <section class="station" id="s1" data-name="Deckadence" data-x="0" data-y="0">
+      <div class="eyebrow" data-fade>A skill for Claude · free, forever</div>
+      <h1 class="display mega" data-split="lines">Deckadence</h1>
+      <svg class="flourish" width="560" height="26" viewBox="0 0 560 26" aria-hidden="true">
+        <path class="fl" d="M 8 16 C 120 6, 240 22, 332 13 C 410 6, 488 15, 552 11"
+              fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="round"/>
+      </svg>
+      <p class="lead tagline" data-fade>Indulgently animated HTML presentations.<br>One file. No framework. A camera over a world.</p>
+      <div class="keyhint" data-fade>press <b>→</b> &nbsp;·&nbsp; this page is the deck</div>
+    </section>
+
+    <section class="station" id="s2" data-name="The idea" data-x="2300" data-y="0">
+      <div class="eyebrow" data-fade>The idea</div>
+      <h2 class="display" data-split="lines">No slides.<br><em>A world.</em></h2>
+      <p class="lead" data-fade style="margin-top:42px">Your stations live at real coordinates on an infinite plane.<br>A virtual camera glides, dives and pulls back between them —<br>press <b>O</b> right now to see where you are.</p>
+    </section>
+
+    <section class="station" id="s3" data-name="Self-drawing SVG" data-x="2300" data-y="1450" data-scene="graph">
+      <div class="eyebrow">Choreography</div>
+      <h2 class="display md" data-split="lines">Diagrams <em>draw themselves</em></h2>
+      <svg class="graph" width="1480" height="360" viewBox="0 0 1480 360">
+        <g class="node"><rect x="30" y="130" width="330" height="104" rx="12"/><text x="195" y="175">YOUR STORY</text><text class="sub" x="195" y="205">BEATS · CLAIMS · DEMOS</text></g>
+        <g class="node"><rect x="575" y="130" width="330" height="104" rx="12"/><text x="740" y="175">THE ENGINE</text><text class="sub" x="740" y="205">CAMERA · SCENES · SVG</text></g>
+        <g class="node"><rect x="1120" y="130" width="330" height="104" rx="12"/><text x="1285" y="175">A REAL SHOW</text><text class="sub" x="1285" y="205">NOT A SLIDESHOW</text></g>
+        <path class="wire" d="M 360 182 C 470 182, 465 182, 575 182"/>
+        <path class="wire" d="M 905 182 C 1015 182, 1010 182, 1120 182"/>
+        <circle class="pulse" r="7" cx="360" cy="182"/>
+        <circle class="pulse" r="7" cx="905" cy="182"/>
+      </svg>
+    </section>
+
+    <section class="station invert" id="s4" data-name="Any look" data-x="4600" data-y="1450" data-scene="skins">
+      <div class="eyebrow">Brand-agnostic</div>
+      <h2 class="display md" data-split="lines">One engine. <em>Any look.</em></h2>
+      <div class="dirs">
+        <div class="dir" data-pal="#EFEDEA,#000000,#7c3aed,#191919,#9CA3AF"><span class="name">Brutalist Grotesk</span><span class="who">manifestos · tech talks</span><span class="sw"><i></i><i></i><i></i><i></i><i></i></span></div>
+        <div class="dir" data-pal="#F7F3EC,#1A1714,#B0402A,#3D3833,#A39B8F"><span class="name">Editorial Serif</span><span class="who">storytelling · strategy</span><span class="sw"><i></i><i></i><i></i><i></i><i></i></span></div>
+        <div class="dir" data-pal="#0C0E0C,#D8E3D6,#4ADE80,#A9B8A6,#5C6B5A"><span class="name">Terminal</span><span class="who">security · infra · dev tools</span><span class="sw"><i></i><i></i><i></i><i></i><i></i></span></div>
+        <div class="dir" data-pal="#FFFFFF,#111111,#E10600,#333333,#999999"><span class="name">Swiss</span><span class="who">data · the quarterly truth</span><span class="sw"><i></i><i></i><i></i><i></i><i></i></span></div>
+        <div class="dir" data-pal="#FFF7EE,#27224F,#FF5D8F,#FFB13D,#3DDC97"><span class="name">Playful Pop</span><span class="who">meetups · workshops</span><span class="sw"><i></i><i></i><i></i><i></i><i></i></span></div>
+        <div class="dir" data-pal="#0D0C0B,#F4F1EA,#E8C46B,#C9C4B8,#6E695F"><span class="name">Midnight Luxe</span><span class="who">launches · this very page</span><span class="sw"><i></i><i></i><i></i><i></i><i></i></span></div>
+      </div>
+    </section>
+
+    <section class="station" id="s5" data-name="Get it" data-x="6900" data-y="1450" data-scene="install">
+      <h2 class="display md" data-split="lines">Yours <em>in one line</em></h2>
+      <div class="term" data-fade>
+        <div class="bar"><i></i><i></i><i></i></div>
+        <pre><span class="c"># install as a Claude Code skill</span>
+<span class="p">$</span> <span id="typed"></span><span class="caret"></span></pre>
+      </div>
+      <p class="after" data-fade>then just ask: <em>“make me a deck about …”</em></p>
+    </section>
+
+    <section class="station" id="s6" data-name="Thanks" data-x="6900" data-y="2900" data-scene="finale">
+      <div class="eyebrow">Go make something</div>
+      <h2 class="display" data-split="lines"><em>Indecently</em> good.</h2>
+      <svg class="heart" width="84" height="78" viewBox="0 0 84 78" aria-hidden="true">
+        <path d="M 42 70 C 18 52, 4 38, 4 22 C 4 9, 14 4, 23 4 C 32 4, 39 10, 42 17 C 45 10, 52 4, 61 4 C 70 4, 80 9, 80 22 C 80 38, 66 52, 42 70 Z"/>
+      </svg>
+      <div class="credits">
+        Born on stage at <a href="https://tomacco.github.io/rules-not-vibes/" target="_blank" rel="noopener">Rules, Not Vibes</a> — the Claude event, June 10, 2026.<br>
+        A gift from <a href="https://github.com/tomacco" target="_blank" rel="noopener">Ivan “Tomacco”</a> &amp; Claude · MIT licensed ·
+        <a href="https://github.com/tomacco/deckadence" target="_blank" rel="noopener">github.com/tomacco/deckadence</a>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div id="hud">
+  <div class="counter"><span id="idx">01</span> / <span id="total">06</span></div>
+  <div id="rail"></div>
+  <div class="hint">← → navigate · O overview</div>
+</div>
+
+<script src="vendor/anime.umd.min.js"></script>
+<script>
+(function () {
+  const { animate, utils } = anime;
+  // function form — the string 'cubicBezier(...)' was removed in anime v4 (falls back to linear)
+  const EASE = anime.cubicBezier ? anime.cubicBezier(.82, 0, .18, 1) : 'inOutQuart';
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const MOTION = reduceMotion ? 0.6 : 1;   // motion is content: scale, never cut
+
+  const nodes = Array.from(document.querySelectorAll('.station'));
+  const stations = nodes.map(el => {
+    const x = +el.dataset.x, y = +el.dataset.y, zoom = +el.dataset.zoom || 1;
+    el.style.transform = `translate(${x}px, ${y}px)`;
+    return { el, x, y, w: el.offsetWidth, h: el.offsetHeight, zoom,
+             cx: x + el.offsetWidth / 2, cy: y + el.offsetHeight / 2, name: el.dataset.name };
+  });
+  const world = document.getElementById('world');
+  const cam = { x: stations[0].cx, y: stations[0].cy, zoom: 1 };
+  let cur = 0, busy = false, overview = false;
+
+  const vw = () => window.innerWidth, vh = () => window.innerHeight;
+  function render() {
+    world.style.transform = `translate(${vw()/2 - cam.x*cam.zoom}px, ${vh()/2 - cam.y*cam.zoom}px) scale(${cam.zoom})`;
+  }
+  const fitZoom = s => Math.min(vw()/s.w, vh()/s.h) * s.zoom;
+
+  /* HUD */
+  const rail = document.getElementById('rail');
+  const railtip = document.createElement('div'); railtip.id = 'railtip'; document.body.appendChild(railtip);
+  stations.forEach((s, i) => {
+    const d = document.createElement('div'); d.className = 'dot' + (i ? '' : ' active');
+    d.addEventListener('click', () => { if (!busy && i !== cur) goto(i); });
+    d.addEventListener('mouseenter', () => {
+      const r = d.getBoundingClientRect();
+      railtip.textContent = String(i+1).padStart(2,'0') + ' · ' + s.name;
+      railtip.style.left = (r.left + r.width/2) + 'px'; railtip.classList.add('show');
+    });
+    d.addEventListener('mouseleave', () => railtip.classList.remove('show'));
+    rail.appendChild(d);
+  });
+  const dots = Array.from(rail.children);
+  document.getElementById('total').textContent = String(stations.length).padStart(2,'0');
+  function setHud(i) {
+    document.getElementById('idx').textContent = String(i+1).padStart(2,'0');
+    dots.forEach((d,k) => d.classList.toggle('active', k===i));
+    document.body.classList.toggle('light-hud', stations[i].el.classList.contains('invert'));
+  }
+
+  /* camera */
+  function flyTo(t, dur = 1150) {
+    busy = true;
+    animate(cam, { x: t.x, y: t.y, zoom: t.zoom, duration: dur*MOTION, ease: EASE,
+      onUpdate: render, onComplete: () => { busy = false; } });
+  }
+  function overviewCam() {
+    const pad = 220;
+    const minX = Math.min(...stations.map(s=>s.x))-pad, maxX = Math.max(...stations.map(s=>s.x+s.w))+pad;
+    const minY = Math.min(...stations.map(s=>s.y))-pad, maxY = Math.max(...stations.map(s=>s.y+s.h))+pad;
+    return { x:(minX+maxX)/2, y:(minY+maxY)/2, zoom: Math.min(vw()/(maxX-minX), vh()/(maxY-minY)) };
+  }
+  function toOverview() {
+    overview = true; busy = true;
+    const c = overviewCam();
+    animate(cam, { x:c.x, y:c.y, zoom:c.zoom, duration:1300*MOTION, ease:EASE, onUpdate:render, onComplete:()=>busy=false });
+  }
+
+  /* scenes */
+  const sceneRegistry = {};
+  function goto(i) {
+    if (i < 0 || i >= stations.length) return;
+    const prev = cur; cur = i; overview = false;
+    setHud(i);
+    Object.values(sceneRegistry).forEach(sc => sc.stop());
+    const s = stations[i], isNew = i !== prev;
+    flyTo({ x: s.cx, y: s.cy, zoom: fitZoom(s) });
+    const sc = s.el.dataset.scene;
+    // run on arrival AND same-station goto (Esc/↓ = replay) — never leave a stopped scene frozen
+    if (sc && sceneRegistry[sc]) sceneRegistry[sc].run(s.el);
+    else playIntro(s, true);
+  }
+
+  /* generic intro */
+  function splitLines(el) {
+    if (el.dataset.done) return;
+    el.innerHTML = el.innerHTML.split(/<br\s*\/?>/i)
+      .map(h => `<span class="clip"><span class="lineInner">${h}</span></span>`).join('');
+    el.dataset.done = '1';
+  }
+  function fitHeading(el) {
+    if (el.dataset.fit) return; el.dataset.fit = '1';
+    const lines = [...el.querySelectorAll('.lineInner')];
+    if (!lines.length) return;
+    const wraps = l => { const lh = parseFloat(getComputedStyle(l).lineHeight) || parseFloat(getComputedStyle(l).fontSize)*1.2; return l.offsetHeight > lh*1.3; };
+    let g = 0;
+    while (lines.some(wraps) && g++ < 26)
+      el.style.fontSize = (parseFloat(getComputedStyle(el).fontSize)*0.94).toFixed(1)+'px';
+  }
+  const releaseClips = el => el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'visible'; });
+  function prepIntro(el) {
+    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });  // re-mask for replays
+    el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
+    el.querySelectorAll('[data-split="lines"]').forEach(fitHeading);
+  }
+  function playIntro(s, isNew) {
+    if (!isNew) return;
+    const el = s.el;
+    prepIntro(el);
+    const lines = el.querySelectorAll('.lineInner');
+    const fades = Array.from(el.querySelectorAll('[data-fade]'));
+    if (lines.length) utils.set(lines, { translateY: '100%' });
+    if (fades.length) utils.set(fades, { opacity: 0, translateY: 22 });
+    if (lines.length) animate(lines, { translateY:['100%','0%'], duration:1150*MOTION, delay:anime.stagger(150*MOTION), ease:EASE, onComplete:()=>releaseClips(el) });
+    else releaseClips(el);
+    if (fades.length) animate(fades, { opacity:[0,1], translateY:[22,0], duration:900*MOTION, delay:anime.stagger(110*MOTION,{start:(lines.length?440:90)*MOTION}), ease:'out(2)' });
+  }
+
+  /* scene helpers */
+  const wait = (scene, ms) => new Promise(res => scene.timers.push(setTimeout(res, ms*MOTION)));
+  function newScene(holder) { holder.stop(); return { cancelled:false, timers:[], anims:[] }; }
+  function killScene(sc) {
+    if (!sc) return;
+    sc.cancelled = true; sc.timers.forEach(clearTimeout);
+    sc.anims.forEach(a => { try { a.pause(); } catch(e){} });
+  }
+  function sA(scene, t, p) { const a = animate(t, p); scene.anims.push(a); return a; }
+  function hidePaths(paths) { paths.forEach(p => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; }); }
+  function drawPaths(scene, paths, dur, base=0, step=0) {
+    paths.forEach((p, i) => {
+      const L = p.getTotalLength(), o = { v: L };
+      p.style.strokeDasharray = L; p.style.strokeDashoffset = L;
+      sA(scene, o, { v:[L,0], duration:dur*MOTION, delay:(base+i*step)*MOTION, ease:'inOutQuad',
+        onUpdate: () => { p.style.strokeDashoffset = o.v; } });
+    });
+  }
+  function pulseAlong(scene, dot, path, dur, delay=0) {
+    const L = path.getTotalLength();
+    scene.timers.push(setTimeout(() => {
+      if (scene.cancelled) return;
+      utils.set(dot, { opacity: 1 });
+      const prog = { t: 0 };
+      sA(scene, prog, { t:[0,1], duration:dur*MOTION, ease:'inOutQuad',
+        onUpdate: () => { const pt = path.getPointAtLength(L*prog.t); dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y); },
+        onComplete: () => { dot.style.opacity = 0; } });
+    }, delay*MOTION));
+  }
+
+  /* S1 hero: lines rise, flourish draws, fades follow — runs at boot */
+  let heroScene = null;
+  sceneRegistry.hero = {
+    stop() { killScene(heroScene); heroScene = null; },
+    run(el) {
+      const scene = newScene(sceneRegistry.hero); heroScene = scene;
+      prepIntro(el);
+      const lines = el.querySelectorAll('.lineInner');
+      const fades = [...el.querySelectorAll('[data-fade]')];
+      const fl = el.querySelector('.flourish path');
+      utils.set(lines, { translateY: '100%' });
+      utils.set(fades, { opacity: 0, translateY: 18 });
+      hidePaths([fl]);
+      (async () => {
+        sA(scene, lines, { translateY:['100%','0%'], duration:1250*MOTION, ease:EASE, onComplete:()=>releaseClips(el) });
+        await wait(scene, 850); if (scene.cancelled) return;
+        drawPaths(scene, [fl], 900);
+        await wait(scene, 500); if (scene.cancelled) return;
+        sA(scene, fades, { opacity:[0,1], translateY:[18,0], duration:900*MOTION, delay:anime.stagger(140*MOTION), ease:'out(2)' });
+      })();
+    }
+  };
+
+  /* S3: node graph builds in narrative order */
+  let graphScene = null;
+  sceneRegistry.graph = {
+    stop() { killScene(graphScene); graphScene = null; },
+    run(el) {
+      const scene = newScene(sceneRegistry.graph); graphScene = scene;
+      prepIntro(el);
+      const lines = el.querySelectorAll('.lineInner');
+      const eyebrow = el.querySelector('.eyebrow');
+      const gnodes = [...el.querySelectorAll('.node')];
+      const wires = [...el.querySelectorAll('.wire')];
+      const pulses = [...el.querySelectorAll('.pulse')];
+      utils.set(lines, { translateY: '100%' });
+      utils.set(eyebrow, { opacity: 0 });
+      gnodes.forEach(n => utils.set(n, { opacity: 0 }));
+      hidePaths(wires); utils.set(pulses, { opacity: 0 });
+      (async () => {
+        sA(scene, eyebrow, { opacity:[0,1], duration:500*MOTION });
+        sA(scene, lines, { translateY:['100%','0%'], duration:1050*MOTION, ease:EASE, onComplete:()=>releaseClips(el) });
+        await wait(scene, 950); if (scene.cancelled) return;
+        sA(scene, gnodes[0], { opacity:[0,1], duration:520*MOTION, ease:'out(3)' });
+        await wait(scene, 480); if (scene.cancelled) return;
+        drawPaths(scene, [wires[0]], 650);
+        await wait(scene, 600); if (scene.cancelled) return;
+        pulseAlong(scene, pulses[0], wires[0], 600);
+        sA(scene, gnodes[1], { opacity:[0,1], duration:520*MOTION, delay:380*MOTION, ease:'out(3)' });
+        await wait(scene, 1000); if (scene.cancelled) return;
+        drawPaths(scene, [wires[1]], 650);
+        await wait(scene, 600); if (scene.cancelled) return;
+        pulseAlong(scene, pulses[1], wires[1], 600);
+        sA(scene, gnodes[2], { opacity:[0,1], duration:620*MOTION, delay:380*MOTION, ease:'out(3)' });
+      })();
+    }
+  };
+
+  /* S4: direction rows stagger in; each row's swatches fill as a COHESIVE set */
+  let skinScene = null;
+  sceneRegistry.skins = {
+    stop() { killScene(skinScene); skinScene = null; },
+    run(el) {
+      const scene = newScene(sceneRegistry.skins); skinScene = scene;
+      prepIntro(el);
+      const lines = el.querySelectorAll('.lineInner');
+      const eyebrow = el.querySelector('.eyebrow');
+      const rows = [...el.querySelectorAll('.dir')];
+      utils.set(lines, { translateY: '100%' });
+      utils.set(eyebrow, { opacity: 0 });
+      rows.forEach(r => {
+        utils.set(r, { opacity: 0, translateY: 26 });
+        r.querySelectorAll('.sw i').forEach(i => { i.style.background = 'rgba(0,0,0,.07)'; i.style.transform = 'scale(.6)'; });
+      });
+      (async () => {
+        sA(scene, eyebrow, { opacity:[0,1], duration:500*MOTION });
+        sA(scene, lines, { translateY:['100%','0%'], duration:1050*MOTION, ease:EASE, onComplete:()=>releaseClips(el) });
+        await wait(scene, 800); if (scene.cancelled) return;
+        for (const r of rows) {
+          sA(scene, r, { opacity:[0,1], translateY:[26,0], duration:520*MOTION, ease:'out(3)' });
+          const pal = r.dataset.pal.split(',');
+          const sws = [...r.querySelectorAll('.sw i')];
+          sws.forEach((sw, i) => { sw.style.background = pal[i]; });   // whole row = one cohesive set
+          sA(scene, sws, { scale:[.6,1], duration:480*MOTION, delay:anime.stagger(55*MOTION, {start:180*MOTION}), ease:'out(3)' });
+          await wait(scene, 240); if (scene.cancelled) return;
+        }
+      })();
+    }
+  };
+
+  /* S5: terminal typewriter */
+  const CMD = 'git clone https://github.com/tomacco/deckadence ~/.claude/skills/deckadence';
+  let instScene = null;
+  sceneRegistry.install = {
+    stop() { killScene(instScene); instScene = null; },
+    run(el) {
+      const scene = newScene(sceneRegistry.install); instScene = scene;
+      prepIntro(el);
+      const lines = el.querySelectorAll('.lineInner');
+      const fades = [...el.querySelectorAll('[data-fade]')];
+      const typed = el.querySelector('#typed');
+      typed.textContent = '';
+      utils.set(lines, { translateY: '100%' });
+      utils.set(fades, { opacity: 0, translateY: 22 });
+      (async () => {
+        sA(scene, lines, { translateY:['100%','0%'], duration:1050*MOTION, ease:EASE, onComplete:()=>releaseClips(el) });
+        await wait(scene, 600); if (scene.cancelled) return;
+        sA(scene, fades[0], { opacity:[0,1], translateY:[22,0], duration:700*MOTION, ease:'out(2)' });
+        await wait(scene, 650); if (scene.cancelled) return;
+        for (let i = 0; i <= CMD.length; i++) {
+          if (scene.cancelled) return;
+          typed.textContent = CMD.slice(0, i);
+          await wait(scene, 18 + (CMD[i-1] === ' ' ? 40 : 0));
+        }
+        await wait(scene, 400); if (scene.cancelled) return;
+        if (fades[1]) sA(scene, fades[1], { opacity:[0,1], translateY:[22,0], duration:700*MOTION, ease:'out(2)' });
+      })();
+    }
+  };
+
+  /* S6 finale: lines rise → heart draws → heart beats */
+  let finScene = null;
+  sceneRegistry.finale = {
+    stop() { killScene(finScene); finScene = null; },
+    run(el) {
+      const scene = newScene(sceneRegistry.finale); finScene = scene;
+      prepIntro(el);
+      const lines = el.querySelectorAll('.lineInner');
+      const eyebrow = el.querySelector('.eyebrow');
+      const heart = el.querySelector('.heart'), hpath = el.querySelector('.heart path');
+      const credits = el.querySelector('.credits');
+      utils.set(lines, { translateY: '100%' });
+      utils.set(eyebrow, { opacity: 0 });
+      utils.set(heart, { opacity: 0, scale: .85 });
+      utils.set(credits, { opacity: 0, translateY: 18 });
+      hidePaths([hpath]);
+      (async () => {
+        sA(scene, eyebrow, { opacity:[0,1], duration:500*MOTION });
+        sA(scene, lines, { translateY:['100%','0%'], duration:1150*MOTION, ease:EASE, onComplete:()=>releaseClips(el) });
+        await wait(scene, 1000); if (scene.cancelled) return;
+        utils.set(heart, { opacity: 1 });
+        drawPaths(scene, [hpath], 900);
+        await wait(scene, 950); if (scene.cancelled) return;
+        sA(scene, heart, { keyframes:[{scale:1.16},{scale:1},{scale:1.1},{scale:1}], duration:1150*MOTION, ease:'inOutSine' });
+        sA(scene, credits, { opacity:[0,1], translateY:[18,0], duration:800*MOTION, delay:300*MOTION, ease:'out(2)' });
+      })();
+    }
+  };
+
+  /* input */
+  const next = () => { if (!busy && cur < stations.length - 1) goto(cur + 1); };
+  const prev = () => { if (!busy && cur > 0) goto(cur - 1); };
+  window.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); next(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+    else if (e.key === 'o' || e.key === 'O' || e.key === 'ArrowUp') { e.preventDefault(); if (!busy) toOverview(); }
+    else if (e.key === 'ArrowDown' || e.key === 'Escape') { e.preventDefault(); if (!busy) goto(cur); }
+  });
+  stations.forEach((s, i) => s.el.addEventListener('click', () => { if (overview && !busy) goto(i); }));
+  let wheelLock = 0;
+  window.addEventListener('wheel', e => {
+    const now = Date.now();
+    if (Math.abs(e.deltaY) < 24) return;
+    if (now - wheelLock < 1300) { wheelLock = now; return; }   // inertia tail keeps the lock alive
+    wheelLock = now; e.deltaY > 0 ? next() : prev();
+  }, { passive: true });
+  window.addEventListener('resize', () => {
+    stations.forEach(s => { s.w = s.el.offsetWidth; s.h = s.el.offsetHeight; s.cx = s.x + s.w/2; s.cy = s.y + s.h/2; });
+    if (overview) toOverview();
+    else { const s = stations[cur]; cam.x = s.cx; cam.y = s.cy; cam.zoom = fitZoom(s); render(); }
+  });
+
+  /* boot (#sN deep links) */
+  const hashIdx = stations.findIndex(s => '#' + s.el.id === location.hash);
+  const start = hashIdx >= 0 ? hashIdx : 0;
+  cur = start;
+  cam.x = stations[start].cx; cam.y = stations[start].cy; cam.zoom = fitZoom(stations[start]);
+  render(); setHud(start);
+  stations[0].el.dataset.scene = 'hero';
+  // hide the start station pre-paint (no final-state flash) + wait for fonts
+  stations[start].el.style.visibility = 'hidden';
+  Promise.all([document.fonts.ready, new Promise(r => setTimeout(r, 280))]).then(() => {
+    const st = stations[start];
+    st.el.style.visibility = '';
+    if (cur !== start) return;
+    const sc = st.el.dataset.scene;
+    if (sc && sceneRegistry[sc]) sceneRegistry[sc].run(st.el);
+    else playIntro(st, true);
+  });
+})();
+</script>
+</body>
+</html>

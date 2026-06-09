@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Talk — Deckadence starter</title>
+<!--
+  ============================================================
+  DECKADENCE STARTER DECK
+  Engine: camera-over-a-world. Stations are fixed 1920x1080 frames
+  placed at real coordinates on an infinite plane; a virtual camera
+  pans/zooms between them (anime.js v4).
+
+  EVERYTHING brand-specific lives in the :root tokens below.
+  Swap the tokens (and the Google Fonts import) to re-skin the
+  entire deck without touching the engine.
+
+  BEFORE SHOW DAY: vendor anime.js next to this file and change the
+  <script src> below — conference wifi is not a dependency you want.
+  ============================================================
+-->
+<!-- FONTS: swap this import together with the tokens below when changing design
+     direction. Self-host the woff2 files before show day (no-wifi rule). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..900&display=swap" rel="stylesheet">
+<style>
+  /* ==========================================================
+     DESIGN TOKENS — the only brand-aware block in the file.
+     See references/design.md for curated directions.
+     ========================================================== */
+  :root {
+    --bg:        #F4F2EE;   /* canvas — warm paper, never pure white */
+    --ink:       #111111;   /* primary type */
+    --ink-soft:  #2b2b2b;   /* body copy */
+    --muted:     #9a948a;   /* captions, eyebrows */
+    --accent:    #1d4ed8;   /* ONE accent. Used sparingly, on purpose */
+    --line:      rgba(0,0,0,.14);
+
+    --font-display: "Archivo", system-ui, sans-serif;
+    --font-body:    "Archivo", system-ui, sans-serif;
+    --display-transform: none;   /* set to uppercase for grotesk/brutalist directions */
+    --display-weight: 800;
+    --display-tracking: -0.02em;
+
+    --ease-expo: cubic-bezier(.82,0,.18,1);  /* the weighty signature ease */
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); }
+  body { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+
+  /* ---------- viewport + world ---------- */
+  #viewport { position: fixed; inset: 0; overflow: hidden; background: var(--bg); transition: background-color .55s var(--ease-expo); }
+  /* Letterbox bars (non-16:9 screens) MUST follow the current station's tone —
+     light bars behind a dark station read as a bug. Toggled via body.invert-hud. */
+  body.invert-hud, body.invert-hud #viewport { background: var(--ink); }
+  #world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+
+  /* A station is a fixed 16:9 frame. The camera fits it to the screen so type
+     reads edge-to-edge. NEVER override a station's position — the engine places
+     it AND it is the containing block for absolutely-positioned children. */
+  .station {
+    position: absolute;
+    width: 1920px; height: 1080px;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 110px 120px;
+  }
+  /* .invert = the OPPOSITE of the canvas tone (contrast-rhythm device). On a
+     light direction it's the dark station; on a dark-first direction (Terminal,
+     Midnight Luxe) it's the light one. Same class either way. */
+  .station.invert { background: var(--ink); color: var(--bg); }
+  .station.invert .eyebrow { color: var(--bg); }
+  .station.invert .lead { color: var(--bg); opacity: .82; }
+
+  /* ---------- shared type scale ---------- */
+  .eyebrow {
+    font-weight: 600; text-transform: uppercase;
+    letter-spacing: .34em; font-size: 16px; opacity: .55;
+  }
+  .display {
+    font-family: var(--font-display); font-weight: var(--display-weight);
+    text-transform: var(--display-transform);
+    line-height: .96; letter-spacing: var(--display-tracking);
+    font-size: 188px;
+  }
+  .display.mega { font-size: 270px; line-height: .92; }
+  .display.md   { font-size: 150px; }
+  .display.sm   { font-size: 104px; }
+  .display .accent { color: var(--accent); }
+  .lead { font-weight: 500; font-size: 32px; line-height: 1.34; color: var(--ink-soft); max-width: 1040px; }
+
+  /* line-reveal mask: .clip hides the rising line, released after landing so
+     descenders (g, y, p) are never cropped at rest */
+  .clip { overflow: hidden; display: block; }
+  .lineInner { display: block; will-change: transform; }
+
+  /* ---------- HUD: progress rail + counter ---------- */
+  #hud {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 34px; pointer-events: none;
+    font-size: 13px; letter-spacing: .14em; color: var(--ink);
+    transition: color .55s ease;
+  }
+  #hud.on-invert { color: var(--bg); }
+  #hud .counter { font-variant-numeric: tabular-nums; opacity: .65; }
+  #hud .station-name { text-transform: uppercase; opacity: .5; }
+  #rail { display: flex; gap: 10px; pointer-events: auto; }
+  #rail .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: currentColor; opacity: .22; cursor: pointer;
+    transition: opacity .3s, transform .3s;
+  }
+  #rail .dot:hover { opacity: .6; }
+  #rail .dot.active { opacity: 1; transform: scale(1.35); }
+  #railtip {
+    position: fixed; bottom: 52px; transform: translateX(-50%); z-index: 51;
+    background: var(--ink); color: var(--bg); font-size: 12px; letter-spacing: .06em;
+    padding: 6px 12px; border-radius: 4px; opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  #railtip.show { opacity: 1; }
+
+  /* ---------- per-station layout ---------- */
+  #s1 .eyebrow { margin-bottom: 50px; }
+  #s1 .credits { margin-top: 46px; font-size: 22px; color: var(--ink-soft);
+                 border-top: 1px solid var(--line); padding-top: 26px; max-width: 760px; }
+
+  #s4 .agenda { display: flex; flex-direction: column; gap: 34px; margin-top: 70px; max-width: 1100px; }
+  #s4 .agenda .item { display: flex; align-items: baseline; gap: 28px; font-size: 40px; font-weight: 600; }
+  #s4 .agenda .item .num { font-size: 20px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* SVG diagram station: explicit width/height on the <svg> — a viewBox with no
+     width/height renders huge and overflows its cell */
+  #s5 .diagram { margin-top: 60px; }
+  #s5 .node rect { fill: none; stroke: var(--bg); stroke-width: 2.5; }
+  #s5 .node text { fill: var(--bg); font-family: var(--font-body); font-size: 21px; font-weight: 600; letter-spacing: .04em; text-anchor: middle; }
+  #s5 .wire { fill: none; stroke: var(--bg); stroke-width: 2; opacity: .85; }
+  #s5 .pulse { fill: var(--accent); opacity: 0; }
+</style>
+</head>
+<body>
+
+<div id="viewport">
+  <div id="world">
+
+    <!-- Stations on the world plane. data-x/data-y = absolute coords.
+         LAYOUT RULE (monotone staircase): each station moves PURE RIGHT
+         (+2300, 0) or PURE DOWN (0, +1450) from the previous one — never
+         up or left — so "next" always advances down/right.
+         Re-verify after every insert/remove (see references/engine.md). -->
+
+    <section class="station" id="s1" data-name="Title" data-x="0" data-y="0">
+      <div class="eyebrow" data-fade>A talk by you</div>
+      <h1 class="display" data-split="lines">Your big idea,<br>one line at a time</h1>
+      <div class="credits" data-fade>Your Name — what you do</div>
+    </section>
+
+    <section class="station" id="s2" data-name="The claim" data-x="2300" data-y="0">
+      <h2 class="display mega" data-split="lines">Make one<br>claim <span class="accent">huge.</span></h2>
+    </section>
+
+    <section class="station invert" id="s3" data-name="Inversion" data-x="2300" data-y="1450">
+      <div class="eyebrow" data-fade>Beat change</div>
+      <h2 class="display" data-split="lines">Invert contrast<br>to mark a turn</h2>
+      <p class="lead" data-fade>Use the inverted station as a rhythm device — a beat change or a key claim — not at random.</p>
+    </section>
+
+    <section class="station" id="s4" data-name="Agenda" data-x="4600" data-y="1450">
+      <div class="eyebrow" data-fade>How this works</div>
+      <h2 class="display md" data-split="lines">Three moves</h2>
+      <div class="agenda">
+        <div class="item" data-fade><span class="num">01</span> Stations on an infinite plane</div>
+        <div class="item" data-fade><span class="num">02</span> A camera that flies between them</div>
+        <div class="item" data-fade><span class="num">03</span> One element owns each moment</div>
+      </div>
+    </section>
+
+    <!-- A bespoke animated scene: data-scene="diagram" hands this station's
+         reveal to the scene registry at the bottom of the file. -->
+    <section class="station invert" id="s5" data-name="Scene demo" data-x="4600" data-y="2900" data-scene="diagram">
+      <!-- no data-fade on this eyebrow: the scene animates it itself -->
+      <div class="eyebrow">Bespoke scene</div>
+      <h2 class="display sm" data-split="lines">Draw, then flow</h2>
+      <svg class="diagram" width="1500" height="420" viewBox="0 0 1500 420">
+        <g class="node" id="n-in"><rect x="40" y="160" width="300" height="100" rx="10"/><text x="190" y="218">YOUR CONTENT</text></g>
+        <g class="node" id="n-mid"><rect x="600" y="160" width="300" height="100" rx="10"/><text x="750" y="218">THE ENGINE</text></g>
+        <g class="node" id="n-out"><rect x="1160" y="160" width="300" height="100" rx="10"/><text x="1310" y="218">A REAL SHOW</text></g>
+        <path class="wire" d="M 340 210 C 450 210, 490 210, 600 210"/>
+        <path class="wire" d="M 900 210 C 1010 210, 1050 210, 1160 210"/>
+        <circle class="pulse" r="7" cx="340" cy="210"/>
+        <circle class="pulse" r="7" cx="900" cy="210"/>
+      </svg>
+    </section>
+
+    <section class="station" id="s6" data-name="Thanks" data-x="6900" data-y="2900">
+      <h2 class="display" data-split="lines">Thank you</h2>
+      <p class="lead" data-fade>← → navigate · O overview · click a dot to jump</p>
+    </section>
+
+  </div>
+</div>
+
+<div id="hud">
+  <div class="counter"><span id="idx">01</span> / <span id="total">06</span></div>
+  <div id="rail"></div>
+  <div class="station-name"></div>
+</div>
+
+<!-- anime.js v4 UMD. Pin the version. VENDOR THIS FILE LOCALLY before presenting. -->
+<script src="https://cdn.jsdelivr.net/npm/animejs@4.4.1/dist/bundles/anime.umd.min.js"></script>
+<script>
+(function () {
+  const { animate, utils } = anime;
+  // The weighty signature ease. MUST be the function form — the STRING
+  // 'cubicBezier(...)' was removed from anime.js v4 and silently falls back
+  // to linear (with a console warning). Named eases like 'out(3)' are fine.
+  const EASE = anime.cubicBezier ? anime.cubicBezier(.82, 0, .18, 1) : 'inOutQuart';
+  // PACE = the design direction's motion personality (see references/design.md:
+  // Terminal 0.85, Editorial 1.15, Midnight Luxe 1.25). 1 = neutral.
+  const PACE = 1;
+  // Motion IS content. Reduced-motion (OS "animations off" — headless Chrome
+  // reports it too) gets a calmer/faster scale, NEVER a dead cut.
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const MOTION = (reduceMotion ? 0.6 : 1) * PACE;
+
+  /* ---------- collect stations ---------- */
+  const nodes = Array.from(document.querySelectorAll('.station'));
+  const stations = nodes.map(el => {
+    const x = +el.dataset.x, y = +el.dataset.y, zoom = +el.dataset.zoom || 1;
+    el.style.transform = `translate(${x}px, ${y}px)`;       // place on the plane
+    return { el, x, y, w: el.offsetWidth, h: el.offsetHeight, zoom,
+             cx: x + el.offsetWidth / 2, cy: y + el.offsetHeight / 2,
+             name: el.dataset.name };
+  });
+
+  const world = document.getElementById('world');
+  const hud = document.getElementById('hud');
+  const cam = { x: stations[0].cx, y: stations[0].cy, zoom: 1 };
+  let cur = 0, busy = false, overview = false;
+
+  function vw() { return window.innerWidth; }
+  function vh() { return window.innerHeight; }
+  function render() {
+    world.style.transform =
+      `translate(${vw() / 2 - cam.x * cam.zoom}px, ${vh() / 2 - cam.y * cam.zoom}px) scale(${cam.zoom})`;
+  }
+  // Fit the 16:9 frame to the viewport — type reads edge-to-edge ("big fonts"
+  // comes from fitting the frame, not from raising font sizes).
+  function fitZoom(s) { return Math.min(vw() / s.w, vh() / s.h) * s.zoom; }
+
+  /* ---------- HUD ---------- */
+  const rail = document.getElementById('rail');
+  const railtip = document.createElement('div'); railtip.id = 'railtip'; document.body.appendChild(railtip);
+  stations.forEach((s, i) => {
+    const d = document.createElement('div'); d.className = 'dot' + (i ? '' : ' active');
+    d.addEventListener('click', () => { if (!busy && i !== cur) goto(i); });
+    d.addEventListener('mouseenter', () => {
+      const r = d.getBoundingClientRect();
+      railtip.textContent = String(i + 1).padStart(2, '0') + ' · ' + s.name;
+      railtip.style.left = (r.left + r.width / 2) + 'px';
+      railtip.classList.add('show');
+    });
+    d.addEventListener('mouseleave', () => railtip.classList.remove('show'));
+    rail.appendChild(d);
+  });
+  const dots = Array.from(rail.children);
+  document.getElementById('total').textContent = String(stations.length).padStart(2, '0');
+  function setHud(i) {
+    document.getElementById('idx').textContent = String(i + 1).padStart(2, '0');
+    hud.querySelector('.station-name').textContent = stations[i].name;
+    dots.forEach((d, k) => d.classList.toggle('active', k === i));
+    const inv = stations[i].el.classList.contains('invert');
+    hud.classList.toggle('on-invert', inv);
+    document.body.classList.toggle('invert-hud', inv);   // letterbox follows tone
+  }
+
+  /* ---------- camera ---------- */
+  function flyTo(target, { dur = 1150, ease = EASE } = {}) {
+    busy = true;
+    animate(cam, { x: target.x, y: target.y, zoom: target.zoom,
+      duration: dur * MOTION, ease, onUpdate: render,
+      onComplete: () => { busy = false; } });
+  }
+  // "Dive": pull back so the next station reads as an object in space, then push in.
+  // Use for showcase moments (data-fly="dive"); plain flyTo is the default glide.
+  function flyDive(s) {
+    busy = true;
+    const target = { x: s.cx, y: s.cy, zoom: fitZoom(s) };
+    animate(cam, { x: target.x, y: target.y,
+      zoom: [
+        { to: target.zoom * 0.34, duration: 720 * MOTION, ease: 'inOutQuad' },
+        { to: target.zoom,        duration: 1030 * MOTION, ease: EASE }
+      ],
+      duration: 1750 * MOTION, ease: EASE, onUpdate: render,
+      onComplete: () => { busy = false; } });
+  }
+  function overviewCam() {
+    const pad = 200;
+    const minX = Math.min(...stations.map(s => s.x)) - pad, maxX = Math.max(...stations.map(s => s.x + s.w)) + pad;
+    const minY = Math.min(...stations.map(s => s.y)) - pad, maxY = Math.max(...stations.map(s => s.y + s.h)) + pad;
+    return { x: (minX + maxX) / 2, y: (minY + maxY) / 2,
+             zoom: Math.min(vw() / (maxX - minX), vh() / (maxY - minY)) };
+  }
+  function toOverview() {
+    overview = true; busy = true;
+    const c = overviewCam();
+    animate(cam, { x: c.x, y: c.y, zoom: c.zoom, duration: 1300 * MOTION, ease: EASE,
+      onUpdate: render, onComplete: () => busy = false });
+  }
+
+  /* ---------- scene registry ----------
+     A bespoke animated station registers { run(el), stop() } under a name and
+     opts into it with data-scene="name". goto() stops EVERY scene on every
+     move (cancel-on-leave) and runs the new station's scene instead of the
+     generic intro. See references/motion.md for the controller pattern. */
+  const sceneRegistry = {};
+
+  /* ---------- navigation ---------- */
+  function goto(i, opts) {
+    if (i < 0 || i >= stations.length) return;
+    const prev = cur; cur = i; overview = false;
+    setHud(i);
+    Object.values(sceneRegistry).forEach(sc => sc.stop());
+    const s = stations[i], isNew = i !== prev;
+    if (s.el.dataset.fly === 'dive' && isNew) flyDive(s);
+    else flyTo({ x: s.cx, y: s.cy, zoom: fitZoom(s) }, opts);
+    const scene = s.el.dataset.scene;
+    // Run on arrival AND on explicit same-station goto (Esc/↓ = replay): scenes
+    // were just stopped above and must never be left frozen mid-draw.
+    if (scene && sceneRegistry[scene]) sceneRegistry[scene].run(s.el);
+    else playIntro(s, true);
+  }
+
+  /* ---------- generic intro ----------
+     HARD RULE: every station gets a transition on arrival, even subtle.
+     Big display = weighty LINE-rise. Everything else = calm fade-up.   */
+
+  // Split a heading into LINES at explicit <br> — NEVER into characters
+  // (char inline-blocks let the browser break words mid-word: "sys/tem").
+  function splitLines(el) {
+    if (el.dataset.done) return;
+    el.innerHTML = el.innerHTML.split(/<br\s*\/?>/i)
+      .map(html => `<span class="clip"><span class="lineInner">${html}</span></span>`)
+      .join('');
+    el.dataset.done = '1';
+  }
+  // Shrink the heading until every <br>-delimited line fits ONE visual line.
+  function fitHeading(el) {
+    if (el.dataset.fit) return; el.dataset.fit = '1';
+    const lines = [...el.querySelectorAll('.lineInner')];
+    if (!lines.length) return;
+    const wraps = l => {
+      const lh = parseFloat(getComputedStyle(l).lineHeight) || parseFloat(getComputedStyle(l).fontSize) * 1.2;
+      return l.offsetHeight > lh * 1.3;
+    };
+    let guard = 0;
+    while (lines.some(wraps) && guard++ < 26) {
+      el.style.fontSize = (parseFloat(getComputedStyle(el).fontSize) * 0.94).toFixed(1) + 'px';
+    }
+  }
+  // Release the clip masks once lines land, so descenders are never cropped.
+  function releaseClips(el) { el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'visible'; }); }
+
+  function playIntro(s, isNew) {
+    if (!isNew) return;
+    const el = s.el;
+    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });  // re-mask for replays
+    el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
+    el.querySelectorAll('[data-split="lines"]').forEach(fitHeading);
+    const lines = el.querySelectorAll('.lineInner');
+    const fades = Array.from(el.querySelectorAll('[data-fade]'));
+    let autos = [];
+    if (!lines.length && !fades.length) {
+      autos = Array.from(el.children).filter(c => getComputedStyle(c).position !== 'absolute');
+    }
+    const fadeTargets = [...fades, ...autos];
+    // initial state BEFORE visible (guard empty lists — anime warns on no targets)
+    if (lines.length) utils.set(lines, { translateY: '100%' });
+    if (fadeTargets.length) utils.set(fadeTargets, { opacity: 0, translateY: 22 });
+    if (lines.length) animate(lines, { translateY: ['100%', '0%'], duration: 1150 * MOTION,
+      delay: anime.stagger(150 * MOTION), ease: EASE, onComplete: () => releaseClips(el) });
+    else releaseClips(el);
+    if (fadeTargets.length) animate(fadeTargets, { opacity: [0, 1], translateY: [22, 0],
+      duration: 900 * MOTION, delay: anime.stagger(110 * MOTION, { start: (lines.length ? 440 : 90) * MOTION }),
+      ease: 'out(2)' });
+  }
+
+  /* ---------- example scene: "diagram" (stroke-draw + pulse) ----------
+     The scene-controller pattern: a plain object {cancelled, timers, anims};
+     stop() cancels everything; an async IIFE sequences beats with await,
+     checking scene.cancelled after every wait. reset state BEFORE reveal. */
+  let diagramScene = null;
+  const wait = (scene, ms) => new Promise(res => scene.timers.push(setTimeout(res, ms * MOTION)));
+  function drawPaths(scene, paths, dur, baseDelay = 0, step = 0) {
+    paths.forEach((p, i) => {
+      const L = p.getTotalLength(), o = { v: L };
+      p.style.strokeDasharray = L; p.style.strokeDashoffset = L;
+      const a = animate(o, { v: [L, 0], duration: dur * MOTION, delay: (baseDelay + i * step) * MOTION,
+        ease: 'inOutQuad', onUpdate: () => { p.style.strokeDashoffset = o.v; } });
+      scene.anims.push(a);
+    });
+  }
+  function pulseAlong(scene, dot, path, dur, delay = 0) {
+    const L = path.getTotalLength();
+    scene.timers.push(setTimeout(() => {
+      if (scene.cancelled) return;
+      utils.set(dot, { opacity: 1 });
+      const prog = { t: 0 };
+      const a = animate(prog, { t: [0, 1], duration: dur * MOTION, ease: 'inOutQuad',
+        onUpdate: () => { const pt = path.getPointAtLength(L * prog.t);
+                          dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y); },
+        onComplete: () => { dot.style.opacity = 0; } });
+      scene.anims.push(a);
+    }, delay * MOTION));
+  }
+  sceneRegistry.diagram = {
+    stop() {
+      if (!diagramScene) return;
+      diagramScene.cancelled = true;
+      diagramScene.timers.forEach(clearTimeout);
+      diagramScene.anims.forEach(a => { try { a.pause(); } catch (e) {} });
+      diagramScene = null;
+    },
+    run(el) {
+      sceneRegistry.diagram.stop();
+      const scene = { cancelled: false, timers: [], anims: [] };
+      diagramScene = scene;
+      const q = s => el.querySelectorAll(s);
+      // reset: initial state BEFORE anything is visible — no final-state flash
+      el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });
+      el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
+      const lines = el.querySelectorAll('.lineInner');
+      utils.set(lines, { translateY: '100%' });
+      utils.set(el.querySelector('.eyebrow'), { opacity: 0 });
+      const nodes = [...q('.node')], wires = [...q('.wire')], pulses = [...q('.pulse')];
+      nodes.forEach(n => utils.set(n, { opacity: 0 }));
+      wires.forEach(p => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; });
+      utils.set(pulses, { opacity: 0 });
+      (async () => {
+        scene.anims.push(animate(el.querySelector('.eyebrow'), { opacity: [0, .55], duration: 500 * MOTION }));
+        scene.anims.push(animate(lines, { translateY: ['100%', '0%'], duration: 1000 * MOTION, ease: EASE,
+          onComplete: () => releaseClips(el) }));
+        await wait(scene, 900); if (scene.cancelled) return;
+        nodes.forEach((n, i) => scene.anims.push(
+          animate(n, { opacity: [0, 1], duration: 520 * MOTION, delay: i * 420 * MOTION, ease: 'out(3)' })));
+        await wait(scene, 600); if (scene.cancelled) return;
+        drawPaths(scene, wires, 700, 0, 420);
+        await wait(scene, 1300); if (scene.cancelled) return;
+        pulseAlong(scene, pulses[0], wires[0], 700, 0);
+        pulseAlong(scene, pulses[1], wires[1], 700, 350);
+      })();
+    }
+  };
+
+  /* ---------- input ---------- */
+  function next() { if (!busy && cur < stations.length - 1) goto(cur + 1); }
+  function prev() { if (!busy && cur > 0) goto(cur - 1); }
+  window.addEventListener('keydown', e => {
+    // building an auto-play reel? intercept arrows HERE while your scene is active
+    // (see references/motion.md · "Auto-play reel with presenter takeover")
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); next(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+    else if (e.key === 'o' || e.key === 'O' || e.key === 'ArrowUp') { e.preventDefault(); if (!busy) toOverview(); }
+    else if (e.key === 'ArrowDown' || e.key === 'Escape') { e.preventDefault(); if (!busy) goto(cur); }
+  });
+  // click a station while in overview to fly to it
+  stations.forEach((s, i) => s.el.addEventListener('click', () => { if (overview && !busy) goto(i); }));
+
+  window.addEventListener('resize', () => {
+    stations.forEach(s => { s.w = s.el.offsetWidth; s.h = s.el.offsetHeight; s.cx = s.x + s.w / 2; s.cy = s.y + s.h / 2; });
+    if (overview) toOverview();
+    else { const s = stations[cur]; cam.x = s.cx; cam.y = s.cy; cam.zoom = fitZoom(s); render(); }
+  });
+
+  /* ---------- boot (supports #s3 deep links for rehearsal) ---------- */
+  const hashIdx = stations.findIndex(s => '#' + s.el.id === location.hash);
+  const start = hashIdx >= 0 ? hashIdx : 0;
+  cur = start;
+  cam.x = stations[start].cx; cam.y = stations[start].cy; cam.zoom = fitZoom(stations[start]);
+  render();
+  setHud(start);
+  // Hide the start station BEFORE first paint (hard rule 4: no final-state flash),
+  // and wait for fonts so fitHeading measures real metrics (cached per element).
+  stations[start].el.style.visibility = 'hidden';
+  Promise.all([document.fonts.ready, new Promise(r => setTimeout(r, 240))]).then(() => {
+    const st = stations[start];
+    st.el.style.visibility = '';                       // same tick as the reset → no flash
+    if (cur !== start) return;                         // user already navigated away
+    const scene = st.el.dataset.scene;
+    if (scene && sceneRegistry[scene]) sceneRegistry[scene].run(st.el);
+    else playIntro(st, true);
+  });
+})();
+</script>
+</body>
+</html>
