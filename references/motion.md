@@ -8,6 +8,11 @@ Animation craft for the deck. anime.js v4 UMD — named exports live on the glob
 > it silently falls back to LINEAR with only a console warning. Always use the function:
 > `const EASE = anime.cubicBezier(.82, 0, .18, 1)` (the template does this). If your
 > motion feels flat and mechanical, check the console for ease warnings first.
+>
+> Generalise the lesson: **an ease name you have not confirmed is a silent failure**, and
+> elastic/spring names are the usual suspects. `grep` the vendor UMD for the name before
+> trusting it. When you want overshoot and cannot confirm a spring, get it from keyframes
+> instead — `ease:'out(3)'` with `scale:[.35,1.06,1]` reads as a pop and depends on nothing.
 
 ## The laws
 
@@ -77,9 +82,41 @@ sceneRegistry.myname = {
 ```
 
 Opt the station in with `data-scene="myname"`. The template's `goto()` stops **every**
-registered scene on **every** navigation (cancel-on-leave) and runs the new station's scene
-instead of the generic intro; the boot deep-link path does the same. Scenes therefore replay
-fresh on re-entry and never leak timers.
+registered scene on **every** navigation (cancel-on-leave) and, **on arrival**, runs the new
+station's scene instead of the generic intro via `revealStation()`; the boot deep-link path
+calls the same function. Scenes therefore replay fresh on re-entry and never leak timers.
+
+### The scene contract
+
+| Member | Required | Does |
+|---|---|---|
+| `run(el)` | yes | reset to initial state, then play. Also the place for heavyweight TEARDOWN (see below) |
+| `stop()` | yes | **freeze**: cancel timers, pause tweens, drop the handle. Never dispose |
+| `still(el)` | no | paint a flat final frame for `?still=1`. Only needed when the scene's CSS rest state is hidden |
+| `handleKey(dir)` | no | presenter beats. Return `true` to consume the keypress, `false` to let the engine navigate |
+
+> **`stop()` FREEZES; it never disposes.** The station you are leaving stays on screen for
+> the whole fly and again in the overview. A `stop()` that disposes geometry, `removeChild`s
+> a canvas, or force-loses a WebGL context makes the content VANISH mid-transition — read as
+> a flicker bug, actually a lifecycle bug. Freeze on leave (`cancelAnimationFrame`, keep the
+> last frame painted); do the real teardown at the TOP of `run()` on re-entry. At most one
+> heavyweight context then exists at a time.
+
+### One scene, N stations (the reusable reveal)
+
+`handleKey` turns a scene into a reusable *behaviour* instead of a one-off. A tension reveal
+— name the category, hold, then reveal the payload — is one scene serving as many stations as
+you like: **`components/scenes/reveal.js`**, wiring in its header.
+
+The whole contract is the return value:
+
+```js
+if (sc.handleKey && sc.handleKey(dir)) return;   // true = consumed, false = navigate on
+```
+
+The station uses **no** `data-fly` (the default pan dispatches `run`), state lives on the
+station element (`data-shown`) so N instances share one code path, and `still()` opens the
+payload so a screenshot shows the full station rather than beat 0.
 
 > **The reset/play split is a HARD RULE.** If a panel becomes visible and THEN its animation
 > resets and plays, the audience sees the final state flash for a frame before it animates.

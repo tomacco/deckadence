@@ -20,7 +20,11 @@
   ============================================================
 -->
 <!-- FONTS: swap this import together with the tokens below when changing design
-     direction. Self-host the woff2 files before show day (no-wifi rule). -->
+     direction. Self-host the woff2 files before show day (no-wifi rule), and when you do,
+     PRELOAD the display face as well:
+       <link rel="preload" as="font" type="font/woff2" crossorigin href="fonts/display.woff2">
+     The boot gate below waits on document.fonts.ready so every masked reveal runs at FINAL
+     font metrics; preloading is what keeps that gate from stalling the open. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400..900&display=swap" rel="stylesheet">
@@ -223,6 +227,11 @@
   // reports it too) gets a calmer/faster scale, NEVER a dead cut.
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const MOTION = (reduceMotion ? 0.6 : 1) * PACE;
+  // ?still=1 → a FLAT frame: camera jumps, no entrance animation, every element painted at
+  // its FINAL state. This is what makes the deck verifiable — a headless screenshot of an
+  // animated station lands mid-rise and photographs as an EMPTY frame, so layout bugs hide.
+  // Reduced-motion is NOT this (motion is content, it only scales durations).
+  const STILL = /[?&]still=1(&|$)/.test(location.search);
 
   /* ---------- collect stations ---------- */
   const nodes = Array.from(document.querySelectorAll('.station'));
@@ -237,7 +246,7 @@
   const world = document.getElementById('world');
   const hud = document.getElementById('hud');
   const cam = { x: stations[0].cx, y: stations[0].cy, zoom: 1 };
-  let cur = 0, busy = false, overview = false;
+  let cur = 0, busy = false, overview = false, navToken = 0;
 
   function vw() { return window.innerWidth; }
   function vh() { return window.innerHeight; }
@@ -270,30 +279,44 @@
     document.getElementById('idx').textContent = String(i + 1).padStart(2, '0');
     hud.querySelector('.station-name').textContent = stations[i].name;
     dots.forEach((d, k) => d.classList.toggle('active', k === i));
+  }
+  // TONE is separate from the HUD's text because it is VISIBLE DURING A FLY: the letterbox
+  // bars paint the viewport background, and the HUD ink flips with them. Flipped at t=0 it
+  // repaints to the DESTINATION tone while the station being LEFT is still on screen — bars
+  // that mismatch their station read as a bug. goto() times this to the camera's midpoint.
+  function setTone(i) {
     const inv = stations[i].el.classList.contains('invert');
     hud.classList.toggle('on-invert', inv);
-    document.body.classList.toggle('invert-hud', inv);   // letterbox follows tone
+    document.body.classList.toggle('invert-hud', inv);
   }
 
   /* ---------- camera ---------- */
-  function flyTo(target, { dur = 1150, ease = EASE } = {}) {
+  // `mid` fires at the camera's midpoint (state changes that must hide inside the move),
+  // `done` on arrival (the station's reveal). Both optional.
+  function flyTo(target, { dur = 1150, ease = EASE, mid, done } = {}) {
+    if (STILL) { Object.assign(cam, target); render(); if (mid) mid(); if (done) done(); return; }
     busy = true;
+    const D = dur * MOTION;
+    if (mid) setTimeout(mid, D * 0.55);
     animate(cam, { x: target.x, y: target.y, zoom: target.zoom,
-      duration: dur * MOTION, ease, onUpdate: render,
-      onComplete: () => { busy = false; } });
+      duration: D, ease, onUpdate: render,
+      onComplete: () => { busy = false; if (done) done(); } });
   }
   // "Dive": pull back so the next station reads as an object in space, then push in.
   // Use for showcase moments (data-fly="dive"); plain flyTo is the default glide.
-  function flyDive(s) {
-    busy = true;
+  function flyDive(s, { mid, done } = {}) {
     const target = { x: s.cx, y: s.cy, zoom: fitZoom(s) };
+    if (STILL) { Object.assign(cam, target); render(); if (mid) mid(); if (done) done(); return; }
+    busy = true;
+    const D = 1750 * MOTION;
+    if (mid) setTimeout(mid, D * 0.55);
     animate(cam, { x: target.x, y: target.y,
       zoom: [
         { to: target.zoom * 0.34, duration: 720 * MOTION, ease: 'inOutQuad' },
         { to: target.zoom,        duration: 1030 * MOTION, ease: EASE }
       ],
-      duration: 1750 * MOTION, ease: EASE, onUpdate: render,
-      onComplete: () => { busy = false; } });
+      duration: D, ease: EASE, onUpdate: render,
+      onComplete: () => { busy = false; if (done) done(); } });
   }
   function overviewCam() {
     const pad = 200;
@@ -323,13 +346,19 @@
     setHud(i);
     Object.values(sceneRegistry).forEach(sc => sc.stop());
     const s = stations[i], isNew = i !== prev;
-    if (s.el.dataset.fly === 'dive' && isNew) flyDive(s);
-    else flyTo({ x: s.cx, y: s.cy, zoom: fitZoom(s) }, opts);
-    const scene = s.el.dataset.scene;
-    // Run on arrival AND on explicit same-station goto (Esc/↓ = replay): scenes
-    // were just stopped above and must never be left frozen mid-draw.
-    if (scene && sceneRegistry[scene]) sceneRegistry[scene].run(s.el);
-    else playIntro(s, true);
+    const token = ++navToken;
+    const fresh = () => token === navToken && !overview;   // still the current navigation?
+    // A station's reveal fires ON ARRIVAL, never at t=0. Dispatched at departure, a scene
+    // spends its opening beats playing to a camera that is still travelling — and on a
+    // `dive` that is 1.75s of choreography the audience watches from across the plane.
+    // Guarded by a nav token so an interrupted fly never reveals over another station.
+    const reveal = () => { if (fresh()) revealStation(s); };
+    const mid = () => { if (fresh()) setTone(i); };
+    // Same-station replay (Esc/↓): no flight to wait for, so reveal at once. Scenes were
+    // stopped above and must never be left frozen mid-draw.
+    if (!isNew) { setTone(i); flyTo({ x: s.cx, y: s.cy, zoom: fitZoom(s) }, opts); reveal(); return; }
+    if (s.el.dataset.fly === 'dive') flyDive(s, { mid, done: reveal });
+    else flyTo({ x: s.cx, y: s.cy, zoom: fitZoom(s) }, { ...opts, mid, done: reveal });
   }
 
   /* ---------- generic intro ----------
@@ -375,6 +404,12 @@
       autos = Array.from(el.children).filter(c => getComputedStyle(c).position !== 'absolute');
     }
     const fadeTargets = [...fades, ...autos];
+    if (STILL) {                     // flat final frame: what a screenshot must show
+      releaseClips(el);
+      if (lines.length) utils.set(lines, { translateY: '0%' });
+      if (fadeTargets.length) utils.set(fadeTargets, { opacity: 1, translateY: 0 });
+      return;
+    }
     // initial state BEFORE visible (guard empty lists — anime warns on no targets)
     if (lines.length) utils.set(lines, { translateY: '100%' });
     if (fadeTargets.length) utils.set(fadeTargets, { opacity: 0, translateY: 22 });
@@ -384,6 +419,18 @@
     if (fadeTargets.length) animate(fadeTargets, { opacity: [0, 1], translateY: [22, 0],
       duration: 900 * MOTION, delay: anime.stagger(110 * MOTION, { start: (lines.length ? 440 : 90) * MOTION }),
       ease: 'out(2)' });
+  }
+
+  // The ONE dispatch point for "show this station" — used by goto() on arrival AND by boot,
+  // so the deep-link path can never drift from the navigation path.
+  // A scene owns its own intro; the generic intro covers everything else. In STILL mode a
+  // scene may expose an optional still(el) that paints its final frame (needed only when the
+  // scene's CSS rest state is hidden — e.g. paths pre-set to a full dashoffset).
+  function revealStation(s) {
+    const name = s.el.dataset.scene, sc = name && sceneRegistry[name];
+    if (STILL) { if (sc && sc.still) sc.still(s.el); playIntro(s, true); return; }
+    if (sc) { sc.run(s.el); return; }
+    playIntro(s, true);
   }
 
   /* ---------- example scene: "diagram" (stroke-draw + pulse) ----------
@@ -480,6 +527,7 @@
   cam.x = stations[start].cx; cam.y = stations[start].cy; cam.zoom = fitZoom(stations[start]);
   render();
   setHud(start);
+  setTone(start);          // boot has nothing to hide behind — flip immediately
   // Hide the start station BEFORE first paint (hard rule 4: no final-state flash),
   // and wait for fonts so fitHeading measures real metrics (cached per element).
   stations[start].el.style.visibility = 'hidden';
@@ -487,9 +535,7 @@
     const st = stations[start];
     st.el.style.visibility = '';                       // same tick as the reset → no flash
     if (cur !== start) return;                         // user already navigated away
-    const scene = st.el.dataset.scene;
-    if (scene && sceneRegistry[scene]) sceneRegistry[scene].run(st.el);
-    else playIntro(st, true);
+    revealStation(st);
   });
 })();
 </script>

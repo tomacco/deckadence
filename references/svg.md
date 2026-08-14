@@ -82,6 +82,49 @@ in screenshots first — what's input, what transforms, what's output — then r
 chrome (panel, node cards, title bars, port dots, wires) as clean SVG/HTML and animate the
 FLOW. An animated reconstruction that explains beats a pixel-perfect static screenshot.
 
+## One SVG, N recolored instances (badges, medals, chips)
+
+When the same mark repeats with different colors per instance, do NOT duplicate the SVG with
+edited gradients — duplicated gradient `id`s collide and the last one silently wins for all
+of them. Author ONE structure, and recolor it with CSS custom properties on a per-instance
+class:
+
+```css
+.medal            { --face:#C9A227; --rim:#8A6F14; --ink:#2B2B2B; }
+.medal.is-craft   { --face:#7FB0A4; --rim:#3F6E63; }
+```
+```html
+<svg class="medal is-craft" width="180" height="220" aria-hidden="true">
+  <polygon fill="var(--rim)"  points="…"/>   <!-- darker facet -->
+  <polygon fill="var(--face)" points="…"/>   <!-- lit facet -->
+</svg>
+```
+
+**FLAT facets instead of gradients** is the whole trick: two or three hard-edged polygons per
+form read as faceted/cubist, recolor from one variable, and cannot collide. Keep an emblem as
+a separate `<g>` per instance.
+
+## Isometric: earn it or stay flat
+
+> **Isometric projection is for PHYSICAL space only** — a factory floor, a building, machines
+> on a line, anything where real 3D volume is the point. Applied to an ABSTRACT diagram (a
+> process ring, a bar chart, a meter) it reads as a gimmick and fights type-driven layout.
+> Default to FLAT and let iso be the exception that shows volume.
+
+Projector, with 1 unit = 1 station px: `P(a,b,z) = [OX + (a−b)·TW, OY + (a+b)·TH − z·ZH]`.
+Draw each box as three polygons (left face, right face, top face); a nonzero `z0` gives you
+elevated beams and floating platforms.
+
+> **Never rotate a projected outline.** Spinning an iso wheel by rotating the whole group
+> tumbles it — a foreshortened ellipse rotated about its center stops looking like a circle
+> viewed at an angle and starts looking like an oval falling over. Keep the rim and hub
+> STATIC outside the animated group, animate ONLY the spokes, and draw the spokes on a TRUE
+> circle then x-scale them by the foreshorten ratio so they sweep the ellipse correctly.
+> General rule: animate the sub-element whose motion is real, and get the projection from a
+> transform — never rotate the silhouette.
+
+Validate any iso look on one prototype station before committing a whole section to it.
+
 ## Authoring rules
 
 - **Always set explicit `width`/`height` on inline `<svg>`** — a viewBox alone renders huge

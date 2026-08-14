@@ -48,12 +48,20 @@ The generic intro covers most stations free: mark headings `data-split="lines"`,
 elements `data-fade`. For hero moments, build a bespoke scene (registry pattern) — see
 `references/motion.md`. Diagrams should draw themselves — see `references/svg.md`.
 
-### 5 · Verify, then hand over
+While drafting, mark unresolved placeholders and open TODOs with a **highlighter background**
+(a `.todo` class) so returning to the deck makes them impossible to miss. Never let a
+placeholder look like finished copy.
 
-Walk the full deck with arrow keys, check every station via deep link, run the staircase
-script. For complex scenes use the CDP harness in `references/pitfalls.md`. Tell the user:
-arrows/Space navigate, `O` = overview, dots jump, `#sN` deep-links, and to **vendor
-anime.js locally before show day**.
+### 5 · Verify by LOOKING, then hand over
+
+**Never declare a deck done that you have not seen rendered.** Serve it, screenshot every
+station with `?still=1#<id>`, and read the images — that flat mode exists because an animated
+station shot mid-rise photographs as an empty frame and hides every layout bug. Then run the
+static gates and walk the deck with arrow keys for the motion. Full recipe and what headless
+can NOT tell you: `references/pitfalls.md`.
+
+Tell the user: arrows/Space navigate, `O` = overview, dots jump, `#sN` deep-links, and to
+**vendor anime.js locally before show day**.
 
 ## Hard rules (each one earned the hard way)
 
@@ -72,6 +80,9 @@ anime.js locally before show day**.
    behind a dark station read as a bug. `.station.invert` means "opposite of the canvas
    tone": the dark station on a light direction, the light one on a dark-first direction.
 10. **One accent color per station, used deliberately.**
+11. **A station reveals on ARRIVAL, never at departure** — and any custom fly you add must
+    dispatch that reveal itself, or the station arrives dead.
+12. **Never ship a deck you have not looked at.** `?still=1` + a screenshot per station.
 
 ## Reference map (read on demand)
 
@@ -82,3 +93,18 @@ anime.js locally before show day**.
 | `references/motion.md` | building reveals, bespoke scenes, reels, timing |
 | `references/svg.md` | any diagram, flourish, node graph, or icon moment |
 | `references/pitfalls.md` | before declaring done; debugging weirdness; verification |
+| `components/README.md` | the splice contract, if a component's own header is not enough |
+
+## Components (copy-me code, not prose — splice into the single file)
+
+Each file's header carries its own WHAT / SPLICE / NEEDS / WIRE. Read the one you need.
+
+| Component | Reach for it when |
+|---|---|
+| `components/verify/check.mjs` | after EVERY edit — static gates, exits nonzero |
+| `components/verify/shoot.sh` | before declaring done — a still screenshot per station |
+| `components/scenes/reveal.js` | a station holds a question, then reveals on the presenter's key |
+| `components/addons/rail-window.js` | the deck passes ~25 stations and the HUD rail overflows |
+| `components/addons/fly-through-overview.js` | one station should arrive via the map |
+| `components/addons/site-iframe.js` | a station IS a real website, scrolled live |
+| `components/svg/iso-box.js` | an isometric scene of PHYSICAL space (factory, building, line) |

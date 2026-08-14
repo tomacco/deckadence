@@ -43,7 +43,10 @@ tokens, the font `<link>` (all fonts below are on Google Fonts), and the `PACE` 
 
 > **Show-day fonts:** Google Fonts is a network dependency. Before presenting, self-host:
 > download the woff2 files (the URLs are inside the Google Fonts CSS response), add
-> `@font-face` rules next to the tokens, and delete the `<link>`.
+> `@font-face` rules next to the tokens, and delete the `<link>`. Then **preload the display
+> face** — `<link rel="preload" as="font" type="font/woff2" crossorigin href="…">`. The engine
+> gates its first reveal on `document.fonts.ready` so masked line-rises run at final font
+> metrics (`pitfalls.md` trap 12); preloading is what keeps that gate from delaying the open.
 
 ### 1. Brutalist Grotesk — bold claims, tech talks, manifestos
 Heavy caps, edge-to-edge, monochrome with a violent accent. Confident to the point of rude.
