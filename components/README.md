@@ -27,11 +27,10 @@ COMPONENT · WHAT · SPLICE (where in the single file) · NEEDS (globals it expe
 | Path | Use when |
 |---|---|
 | `verify/check.mjs` | after EVERY edit — static gates (staircase, ids, syntax, scene wiring) |
-| `verify/shoot.sh` | before declaring done — still-mode screenshot per station |
+| `verify/shoot.sh` | before declaring done — still-mode screenshot per station (`DECK_SHOT=phone` / `ipad` presets) |
 | `scenes/reveal.js` | a station should hold a question, then reveal the answer on the presenter's key |
 | `addons/fly-through-overview.js` | one station arrives via the map (the deck's single flourish) |
 | `addons/site-iframe.js` | a station IS a real website, scrolled live |
-| `addons/rail-window.js` | the deck passes ~25 stations and the HUD rail overflows |
 | `svg/iso-box.js` | an isometric scene of PHYSICAL space (factory, building, line) |
 
 Directions (the `:root` token sets) deliberately stay in `references/design.md`: choosing a

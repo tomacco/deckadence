@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>My Talk — Deckadence starter</title>
 <!--
   ============================================================
@@ -51,10 +51,15 @@
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+               overscroll-behavior: none; }   /* swipe-down = prev, never pull-to-refresh */
   body { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
 
   /* ---------- viewport + world ---------- */
+  /* clip-path = the letterbox MASK: on non-16:9 screens (phones especially) the bars beside
+     the fitted frame are wide enough to show NEIGHBOURING stations on the plane. The engine
+     clips #viewport to the current frame at rest and opens it during flights. body carries
+     the same tone as the bars, so the mask never exposes a wrong colour. */
   #viewport { position: fixed; inset: 0; overflow: hidden; background: var(--bg); transition: background-color .55s var(--ease-expo); }
   /* Letterbox bars (non-16:9 screens) MUST follow the current station's tone —
      light bars behind a dark station read as a bug. Toggled via body.invert-hud. */
@@ -118,12 +123,86 @@
   }
   #rail .dot:hover { opacity: .6; }
   #rail .dot.active { opacity: 1; transform: scale(1.35); }
+  /* rail WINDOW (engine: railWindow) — past the point where one dot per station fits
+     between the HUD corners, only a window around the current dot is shown; a tapered
+     end dot says "there is more this way". */
+  #rail .dot.out  { display: none; }
+  #rail .dot.edge { opacity: .22; transform: scale(.62); }
   #railtip {
     position: fixed; bottom: 52px; transform: translateX(-50%); z-index: 51;
     background: var(--ink); color: var(--bg); font-size: 12px; letter-spacing: .06em;
     padding: 6px 12px; border-radius: 4px; opacity: 0; pointer-events: none; transition: opacity .25s;
   }
   #railtip.show { opacity: 1; }
+  /* full-screen toggle: ALWAYS present (F key too). Sits in the HUD so it inherits the tone
+     flip; the HUD is pointer-events:none, so the button opts back in. */
+  #fsbtn {
+    position: fixed; top: 22px; right: 26px; pointer-events: auto; cursor: pointer;
+    background: none; border: 0; padding: 8px; line-height: 0; color: currentColor; opacity: .5;
+    transition: opacity .25s, transform .25s var(--ease-expo);
+  }
+  #fsbtn:hover { opacity: 1; transform: scale(1.1); }
+  #fsbtn svg { width: 22px; height: 22px; display: block; fill: none; stroke: currentColor;
+               stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #fsbtn .ic-exit { display: none; }
+  body.is-fullscreen #fsbtn .ic-enter { display: none; }
+  body.is-fullscreen #fsbtn .ic-exit { display: block; }
+
+  /* ---------- touch / phones (decks get read on phones after the talk) ---------- */
+  #swipehint {
+    position: fixed; left: 50%; bottom: 64px; z-index: 60; pointer-events: none;
+    font-weight: 600; font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 999px;
+    opacity: 0; transform: translateX(-50%); animation: swipehint 5s ease 1.1s forwards;
+  }
+  body.invert-hud #swipehint { background: var(--bg); color: var(--ink); }
+  @keyframes swipehint {
+    0%       { opacity: 0; transform: translate(-50%, 10px); }
+    12%, 78% { opacity: 1; transform: translate(-50%, 0); }
+    100%     { opacity: 0; transform: translate(-50%, -8px); }
+  }
+  @media (pointer: coarse) {
+    /* Embedded iframes are objects, not interactive here — without this, touches die
+       inside the iframe document and swipes can't leave those stations. */
+    .station iframe { pointer-events: none; }
+    #railtip { display: none; }                 /* hover tooltip — meaningless on touch */
+    /* Full screen is the ONLY way to shed Safari's tab/URL chrome on iOS (16.4+) —
+       make the button findable: bigger target + a few attention pulses after load. */
+    #fsbtn svg { width: 28px; height: 28px; }
+    #fsbtn { animation: fs-nudge 1.5s ease 1.8s 3; }
+  }
+  @keyframes fs-nudge { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.4); } }
+  /* phone-size chrome (either orientation): the HUD must fit a small screen. safe-area
+     insets keep chrome off the notch / home indicator (viewport-fit=cover). */
+  @media (max-width: 760px), (max-height: 500px) {
+    #hud { font-size: 10px; letter-spacing: .12em;
+           padding: 10px calc(14px + env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) calc(14px + env(safe-area-inset-left, 0px)); }
+    #fsbtn { top: calc(12px + env(safe-area-inset-top, 0px)); right: calc(12px + env(safe-area-inset-right, 0px)); }
+    #rail { gap: 5px; }
+    #rail .dot { width: 5px; height: 5px; }
+    #railtip { bottom: 36px; }
+  }
+  /* rotate hint (small PORTRAIT touch screens only — chrome, not a station). The deck is a
+     16:9 world: landscape reads ~2.4x bigger. Tap = full screen + read anyway (engine adds
+     .rh-dismissed); rotating hides it via the media query. */
+  #rotatehint { display: none; position: fixed; inset: 0; z-index: 90; background: var(--bg); color: var(--ink);
+    flex-direction: column; align-items: center; justify-content: center; gap: 34px;
+    text-align: center; cursor: pointer; }
+  @media (pointer: coarse) and (orientation: portrait) and (max-width: 760px) {
+    body:not(.rh-dismissed) #rotatehint { display: flex; }
+  }
+  #rotatehint .rh-phone { width: 60px; height: 60px; fill: none; stroke: currentColor;
+    stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+    animation: rh-turn 2.8s var(--ease-expo) infinite; }
+  @keyframes rh-turn { 0%, 22% { transform: rotate(0); } 55%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+  #rotatehint .rh-title { font-family: var(--font-display); font-weight: var(--display-weight);
+    text-transform: uppercase; line-height: .92; letter-spacing: -.01em; font-size: 17vw; }
+  #rotatehint .rh-sub { font-weight: 600; font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    opacity: .55; max-width: 80vw; line-height: 1.7; }
+  /* iPhone Safari has no element fullscreen — swap the promise for the honest path */
+  #rotatehint .rh-nofs { display: none; }
+  body.no-fullscreen #rotatehint .rh-fs { display: none; }
+  body.no-fullscreen #rotatehint .rh-nofs { display: inline; }
 
   /* ---------- per-station layout ---------- */
   #s1 .eyebrow { margin-bottom: 50px; }
@@ -199,7 +278,7 @@
 
     <section class="station" id="s6" data-name="Thanks" data-x="6900" data-y="2900">
       <h2 class="display" data-split="lines">Thank you</h2>
-      <p class="lead" data-fade>← → navigate · O overview · click a dot to jump</p>
+      <p class="lead" data-fade>← → navigate · O overview · F full screen · click a dot to jump</p>
     </section>
 
   </div>
@@ -209,6 +288,23 @@
   <div class="counter"><span id="idx">01</span> / <span id="total">06</span></div>
   <div id="rail"></div>
   <div class="station-name"></div>
+  <button id="fsbtn" type="button" aria-label="Toggle full screen" title="Full screen (F)">
+    <svg class="ic-enter" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
+    <svg class="ic-exit" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3v5H3M16 3v5h5M8 21v-5H3M16 21v-5h5"/></svg>
+  </button>
+</div>
+
+<!-- Shown only on small portrait touch screens (CSS media query). Tap = full screen + dismiss. -->
+<div id="rotatehint" role="button" aria-label="Dismiss and continue in portrait">
+  <svg class="rh-phone" viewBox="0 0 48 48" aria-hidden="true">
+    <rect x="16" y="7" width="16" height="34" rx="3.5"/>
+    <line x1="21" y1="12" x2="27" y2="12"/>
+  </svg>
+  <div class="rh-title">Rotate<br>your<br>phone</div>
+  <div class="rh-sub">
+    <span class="rh-fs">This deck is widescreen —<br>tap for full screen, then swipe</span>
+    <span class="rh-nofs">This deck is widescreen — tap, then swipe.<br>True full screen: Share → Add to Home Screen</span>
+  </div>
 </div>
 
 <!-- anime.js v4 UMD. Pin the version. VENDOR THIS FILE LOCALLY before presenting. -->
@@ -232,6 +328,8 @@
   // animated station lands mid-rise and photographs as an EMPTY frame, so layout bugs hide.
   // Reduced-motion is NOT this (motion is content, it only scales durations).
   const STILL = /[?&]still=1(&|$)/.test(location.search);
+  // Coarse pointer = phone/tablet: swipe nav, station culling, auto full screen on first swipe.
+  const TOUCH = matchMedia('(pointer: coarse)').matches;
 
   /* ---------- collect stations ---------- */
   const nodes = Array.from(document.querySelectorAll('.station'));
@@ -244,6 +342,7 @@
   });
 
   const world = document.getElementById('world');
+  const viewportEl = document.getElementById('viewport');
   const hud = document.getElementById('hud');
   const cam = { x: stations[0].cx, y: stations[0].cy, zoom: 1 };
   let cur = 0, busy = false, overview = false, navToken = 0;
@@ -257,6 +356,21 @@
   // Fit the 16:9 frame to the viewport — type reads edge-to-edge ("big fonts"
   // comes from fitting the frame, not from raising font sizes).
   function fitZoom(s) { return Math.min(vw() / s.w, vh() / s.h) * s.zoom; }
+  // Letterbox mask (see #viewport CSS): clip to the fitted frame at rest, open for flights.
+  function maskToStation(s) {
+    const z = fitZoom(s);
+    const l = Math.max(0, (vw() - s.w * z) / 2).toFixed(1), t = Math.max(0, (vh() - s.h * z) / 2).toFixed(1);
+    viewportEl.style.clipPath = `inset(${t}px ${l}px ${t}px ${l}px)`;
+  }
+  function unmask() { viewportEl.style.clipPath = 'inset(0px 0px 0px 0px)'; }
+  // Phone survival: mobile Safari kills the tab under GPU/memory pressure — dozens of
+  // stations on one composited plane is too much. On touch, paint only the current station
+  // ±1; next/prev only ever cross adjacent stations, so flights still pan over painted
+  // content (a dot-jump crosses blank world mid-flight, accepted). Desktop paints everything.
+  function updateCulling() {
+    if (!TOUCH) return;
+    stations.forEach((s, k) => { s.el.style.visibility = (overview || Math.abs(k - cur) <= 1) ? '' : 'hidden'; });
+  }
 
   /* ---------- HUD ---------- */
   const rail = document.getElementById('rail');
@@ -275,10 +389,36 @@
   });
   const dots = Array.from(rail.children);
   document.getElementById('total').textContent = String(stations.length).padStart(2, '0');
+  // The rail does not scale: one dot per station overflows into the HUD corners past ~25.
+  // Window the dots around the current one, sized from the ACTUAL gap between the corner
+  // elements (a hardcoded count overlaps the counter on a phone, wastes space on a wall).
+  function railWindow(i) {
+    const n = dots.length;
+    if (!n) return;
+    // Measure the ACTIVE dot (always in the window; offsetWidth ignores its scale transform)
+    // and the corners' intrinsic widths — never their positions: once the rail overflows,
+    // flex has already pushed the corners apart and the "gap" between them reads as huge.
+    const DOT = dots[i].offsetWidth || 8, GAP = parseFloat(getComputedStyle(rail).gap) || 10, CLEAR = 28;
+    const hs = getComputedStyle(hud);
+    let avail = hud.clientWidth - parseFloat(hs.paddingLeft) - parseFloat(hs.paddingRight);
+    for (const c of hud.children)                  // corners share the row; #fsbtn is fixed
+      if (c !== rail && getComputedStyle(c).position !== 'fixed') avail -= c.offsetWidth;
+    if (avail < 100) avail = vw() * 0.5;           // bogus measure (hidden HUD) → a safe guess
+    const max = Math.max(5, Math.floor((avail - 2 * CLEAR) / (DOT + GAP)));
+    if (n <= max) { dots.forEach(d => d.classList.remove('out', 'edge')); return; }
+    const start = Math.min(Math.max(0, i - Math.floor(max / 2)), n - max), end = start + max - 1;
+    dots.forEach((d, k) => {
+      const inWin = k >= start && k <= end;
+      d.classList.toggle('out', !inWin);
+      // taper only the ends that have more stations beyond them: "there is more this way"
+      d.classList.toggle('edge', inWin && ((k === start && start > 0) || (k === end && end < n - 1)));
+    });
+  }
   function setHud(i) {
     document.getElementById('idx').textContent = String(i + 1).padStart(2, '0');
     hud.querySelector('.station-name').textContent = stations[i].name;
     dots.forEach((d, k) => d.classList.toggle('active', k === i));
+    railWindow(i);
   }
   // TONE is separate from the HUD's text because it is VISIBLE DURING A FLY: the letterbox
   // bars paint the viewport background, and the HUD ink flips with them. Flipped at t=0 it
@@ -294,20 +434,20 @@
   // `mid` fires at the camera's midpoint (state changes that must hide inside the move),
   // `done` on arrival (the station's reveal). Both optional.
   function flyTo(target, { dur = 1150, ease = EASE, mid, done } = {}) {
-    if (STILL) { Object.assign(cam, target); render(); if (mid) mid(); if (done) done(); return; }
-    busy = true;
+    if (STILL) { Object.assign(cam, target); render(); maskToStation(stations[cur]); if (mid) mid(); if (done) done(); return; }
+    busy = true; unmask();
     const D = dur * MOTION;
     if (mid) setTimeout(mid, D * 0.55);
     animate(cam, { x: target.x, y: target.y, zoom: target.zoom,
       duration: D, ease, onUpdate: render,
-      onComplete: () => { busy = false; if (done) done(); } });
+      onComplete: () => { busy = false; maskToStation(stations[cur]); if (done) done(); } });
   }
   // "Dive": pull back so the next station reads as an object in space, then push in.
   // Use for showcase moments (data-fly="dive"); plain flyTo is the default glide.
   function flyDive(s, { mid, done } = {}) {
     const target = { x: s.cx, y: s.cy, zoom: fitZoom(s) };
-    if (STILL) { Object.assign(cam, target); render(); if (mid) mid(); if (done) done(); return; }
-    busy = true;
+    if (STILL) { Object.assign(cam, target); render(); maskToStation(s); if (mid) mid(); if (done) done(); return; }
+    busy = true; unmask();
     const D = 1750 * MOTION;
     if (mid) setTimeout(mid, D * 0.55);
     animate(cam, { x: target.x, y: target.y,
@@ -316,7 +456,7 @@
         { to: target.zoom,        duration: 1030 * MOTION, ease: EASE }
       ],
       duration: D, ease: EASE, onUpdate: render,
-      onComplete: () => { busy = false; if (done) done(); } });
+      onComplete: () => { busy = false; maskToStation(s); if (done) done(); } });
   }
   function overviewCam() {
     const pad = 200;
@@ -326,7 +466,7 @@
              zoom: Math.min(vw() / (maxX - minX), vh() / (maxY - minY)) };
   }
   function toOverview() {
-    overview = true; busy = true;
+    overview = true; busy = true; unmask(); updateCulling();
     const c = overviewCam();
     animate(cam, { x: c.x, y: c.y, zoom: c.zoom, duration: 1300 * MOTION, ease: EASE,
       onUpdate: render, onComplete: () => busy = false });
@@ -343,7 +483,7 @@
   function goto(i, opts) {
     if (i < 0 || i >= stations.length) return;
     const prev = cur; cur = i; overview = false;
-    setHud(i);
+    setHud(i); updateCulling();
     Object.values(sceneRegistry).forEach(sc => sc.stop());
     const s = stations[i], isNew = i !== prev;
     const token = ++navToken;
@@ -503,21 +643,98 @@
   /* ---------- input ---------- */
   function next() { if (!busy && cur < stations.length - 1) goto(cur + 1); }
   function prev() { if (!busy && cur > 0) goto(cur - 1); }
+  // ONE step dispatch for arrows AND swipes. Building an auto-play reel? intercept HERE
+  // while your scene is active (see references/motion.md · "Auto-play reel with presenter
+  // takeover") — then keys and swipes both step the reel.
+  function step(dir) { dir > 0 ? next() : prev(); }
+
+  // True full screen (Fullscreen API) — no browser chrome. HUD button or F.
+  function toggleFullscreen() {
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!fsEl) {
+      const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req) { try { const p = req.call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+    } else {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) exit.call(document);
+    }
+  }
+  const fsbtn = document.getElementById('fsbtn');
+  fsbtn.addEventListener('click', () => { toggleFullscreen(); fsbtn.blur(); });
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => document.addEventListener(ev, () => {
+    document.body.classList.toggle('is-fullscreen', !!(document.fullscreenElement || document.webkitFullscreenElement));
+  }));
+  // iPhone Safari has NO element fullscreen (iPad/Android do; iPhone only allows <video>).
+  // Flag body so chrome copy offers the honest path (Add to Home Screen) and drop the
+  // button rather than show a dead control.
+  if (!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen)) {
+    document.body.classList.add('no-fullscreen');
+    fsbtn.style.display = 'none';
+  }
+
   window.addEventListener('keydown', e => {
-    // building an auto-play reel? intercept arrows HERE while your scene is active
-    // (see references/motion.md · "Auto-play reel with presenter takeover")
-    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); next(); }
-    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); step(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); step(-1); }
     else if (e.key === 'o' || e.key === 'O' || e.key === 'ArrowUp') { e.preventDefault(); if (!busy) toOverview(); }
+    else if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFullscreen(); }
     else if (e.key === 'ArrowDown' || e.key === 'Escape') { e.preventDefault(); if (!busy) goto(cur); }
   });
+
+  // Touch: a single-finger swipe IS the arrow keys (same step() dispatch). Multi-touch is
+  // left to the browser so pinch-zoom keeps working; while pinch-zoomed in, swipes pan.
+  // A fullscreen request needs a user gesture — the first swipe qualifies, so it enters
+  // full screen automatically (once: if the reader exits, respect it). The landscape lock
+  // works on Android, rejects silently on iOS (the reader rotates physically).
+  let swipeHint = null;
+  function removeSwipeHint() { if (swipeHint) { swipeHint.remove(); swipeHint = null; } }
+  if (TOUCH && !STILL) {
+    swipeHint = document.createElement('div');
+    swipeHint.id = 'swipehint'; swipeHint.textContent = 'Swipe to navigate';
+    document.body.appendChild(swipeHint);
+    swipeHint.addEventListener('animationend', removeSwipeHint);
+  }
+  function requestDeckFullscreen(lockLandscape) {
+    const el = document.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req || document.fullscreenElement || document.webkitFullscreenElement) return;
+    try {
+      const p = req.call(el);
+      if (p && p.catch) p.catch(() => {});
+      if (lockLandscape && screen.orientation && screen.orientation.lock)
+        Promise.resolve(p).then(() => screen.orientation.lock('landscape')).catch(() => {});
+    } catch (e) {}
+  }
+  let fsAuto = false, touch = null;
+  window.addEventListener('touchstart', e => {
+    touch = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+  }, { passive: true });
+  window.addEventListener('touchcancel', () => { touch = null; }, { passive: true });
+  window.addEventListener('touchend', e => {
+    if (!touch || e.touches.length) return;
+    const dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y;
+    touch = null;
+    if (window.visualViewport && window.visualViewport.scale > 1.05) return;  // zoomed in → panning
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (Math.max(ax, ay) < 48) return;                       // a tap, not a swipe
+    if (TOUCH && !fsAuto) { fsAuto = true; requestDeckFullscreen(false); }
+    removeSwipeHint();
+    step((ax >= ay ? dx : dy) < 0 ? 1 : -1);                 // left/up = next, right/down = prev
+  }, { passive: true });
+  // Portrait overlay (CSS shows it only on small portrait touch screens): tapping it is a
+  // gesture too — go full screen (+ try the landscape lock, since rotating is the ask).
+  document.getElementById('rotatehint').addEventListener('click', () => {
+    fsAuto = true;
+    requestDeckFullscreen(true);
+    document.body.classList.add('rh-dismissed');
+  });
+
   // click a station while in overview to fly to it
   stations.forEach((s, i) => s.el.addEventListener('click', () => { if (overview && !busy) goto(i); }));
 
   window.addEventListener('resize', () => {
     stations.forEach(s => { s.w = s.el.offsetWidth; s.h = s.el.offsetHeight; s.cx = s.x + s.w / 2; s.cy = s.y + s.h / 2; });
+    railWindow(cur);
     if (overview) toOverview();
-    else { const s = stations[cur]; cam.x = s.cx; cam.y = s.cy; cam.zoom = fitZoom(s); render(); }
+    else { const s = stations[cur]; cam.x = s.cx; cam.y = s.cy; cam.zoom = fitZoom(s); render(); maskToStation(s); }
   });
 
   /* ---------- boot (supports #s3 deep links for rehearsal) ---------- */
@@ -526,14 +743,17 @@
   cur = start;
   cam.x = stations[start].cx; cam.y = stations[start].cy; cam.zoom = fitZoom(stations[start]);
   render();
+  maskToStation(stations[start]);
   setHud(start);
   setTone(start);          // boot has nothing to hide behind — flip immediately
+  updateCulling();
   // Hide the start station BEFORE first paint (hard rule 4: no final-state flash),
   // and wait for fonts so fitHeading measures real metrics (cached per element).
   stations[start].el.style.visibility = 'hidden';
   Promise.all([document.fonts.ready, new Promise(r => setTimeout(r, 240))]).then(() => {
     const st = stations[start];
     st.el.style.visibility = '';                       // same tick as the reset → no flash
+    updateCulling();                                   // (touch: re-cull if the user moved on)
     if (cur !== start) return;                         // user already navigated away
     revealStation(st);
   });

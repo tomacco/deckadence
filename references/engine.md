@@ -1,8 +1,9 @@
 # The Engine: Camera Over a World
 
 How the spatial deck works, from zero. The CORE engine (world, camera, fitZoom, goto,
-generic intro, HUD, overview, dive, deep links, scene registry) ships working in
-`template/starter.html` — copy that file as your starting point; never rebuild the engine
+generic intro, HUD + windowed rail, full-screen toggle, overview, dive, deep links, scene
+registry, and the phone/iPad layer: swipe nav, letterbox mask, culling, rotate hint) ships
+working in `template/starter.html` — copy that file as your starting point; never rebuild the engine
 from scratch. Two features are **[ADD-ON]**s you splice in only when the talk needs them —
 the fly-through-overview move and the full-screen site showcase. Both live as real files in
 `components/addons/`, with their wiring in each file's header.
@@ -98,10 +99,11 @@ overview should read as a map of the talk.
   than per-station overrides. Re-skinning a whole territory becomes one token block.
 - A section with no palette of its own **inherits the previous one**. That is a fine choice
   and a bad accident — decide it on purpose, and write down that you did.
-- **The HUD rail does not scale.** One dot per station overflows into the key hints past ~25.
-  Splice `components/addons/rail-window.js`: it windows the dots around the current one and
-  tapers the ends, sized from the measured gap between the HUD's corner text rather than a
-  hardcoded count.
+- **The HUD rail does not scale — so the engine windows it.** One dot per station would
+  overflow into the HUD corners past ~25; `railWindow()` (in the template) shows a window of
+  dots around the current one and tapers the ends, sized from the measured gap between the
+  counter and the station name, not a hardcoded count. If you restyle `#rail`, keep the
+  `.out` / `.edge` rules; the window reads dot size and gap from the computed CSS.
 
 ## Camera moves
 
@@ -124,14 +126,40 @@ the whole move it must dispatch the reveal and the tone flip itself — that is 
 ## Navigation & input (already wired in the template)
 
 - `→` / `Space` / `PageDown` = next · `←` / `PageUp` = prev
-- `O` / `↑` = overview · `↓` / `Esc` = return to current station
+- `O` / `↑` = overview · `↓` / `Esc` = return to current station · `F` = full screen
+  (also the `#fsbtn` button top-right — it is ALWAYS present; on iPhone Safari, which has
+  no element fullscreen, the engine hides it and flags `body.no-fullscreen`)
 - Click a rail dot to jump (dots show name tooltips on hover); click a station in overview
   to fly to it.
+- **Touch (phones, iPads):** a single-finger swipe is the arrow keys, through the same
+  `step(dir)` dispatch — a reel that intercepts arrows intercepts swipes for free. The first
+  swipe enters full screen (a gesture is required; once only — if the reader exits, respect
+  it). Pinch-zoom is left to the browser; while zoomed in, swipes pan instead of navigating.
+  `overscroll-behavior: none` so swipe-down is prev, not pull-to-refresh.
 - `busy` flag: input is ignored while the camera is in flight — prevents tween pile-ups.
 - **Deep links:** `#s5` in the URL boots at that station. Essential for rehearsal and for
   automated verification. The boot path must run the station's scene (or intro) too — the
   template handles this.
 - `resize` handler refits the current station; HUD shows `current/total` + station name.
+
+## Phones & iPads (in the template — keep it when you restyle)
+
+Decks get read on phones after the talk, and the HUD is the first thing a redesign breaks.
+What ships, and what each piece is for:
+
+| Piece | What it does | Keep when you… |
+|---|---|---|
+| **Letterbox mask** `maskToStation()` | clips `#viewport` to the fitted frame at rest (open during flights) — on a 4:3 iPad or a 19.5:9 phone the bars are wide enough to show the NEIGHBOURING station otherwise | change fly functions (call `unmask()` at departure, `maskToStation()` on arrival) |
+| **Culling** `updateCulling()` | on coarse pointers paints only the current station ±1 — mobile Safari kills the tab under memory pressure on long decks; next/prev only cross adjacent stations so flights still pan over painted content | add a navigation path (call it after `cur` changes) |
+| **Rotate hint** `#rotatehint` | small PORTRAIT touch screens get a full-screen "rotate your phone" — a 16:9 world reads ~2.4x bigger in landscape; tap = full screen + dismiss | redesign chrome (restyle it in the direction's tokens, do not delete it) |
+| **Swipe hint** `#swipehint` | one 5 s pill on first load, touch only | — |
+| **Phone HUD** `@media (max-width: 760px), (max-height: 500px)` | smaller counter, 5 px dots, safe-area insets (`viewport-fit=cover` in the meta) | restyle the HUD (re-derive these rules for your HUD) |
+| **Touch chrome** `@media (pointer: coarse)` | iframes `pointer-events: none` (else swipes die inside them), hover tooltip hidden, bigger + pulsing full-screen button (the only way to shed Safari's URL bar) | restyle the HUD |
+
+Station CONTENT needs nothing: the camera fits the 1920×1080 frame, so type scales with it.
+Verify with `DECK_SHOT=phone components/verify/shoot.sh deck/index.html` (844×390) and
+`DECK_SHOT=ipad` (1180×820) — the mask and phone HUD only show up off-16:9 at small sizes.
+`check.mjs` fails the deck if any of this chrome is missing.
 
 ## [ADD-ON] Stations that ARE a website (full-screen showcase)
 

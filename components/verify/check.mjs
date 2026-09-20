@@ -4,7 +4,8 @@
 // Run after EVERY edit. Exits nonzero on any failure, so it can gate a commit.
 //
 // Checks: station parse · monotone staircase · duplicate ids · engine syntax ·
-//         scenes used vs registered · data-fly values vs handled · unstyled classes.
+//         scenes used vs registered · data-fly values vs handled · device chrome
+//         (full screen, swipe, mask, culling, rail window, phone CSS) · unstyled classes.
 // It cannot check layout OVERFLOW — that needs a screenshot (components/verify/shoot.sh).
 
 import { readFileSync } from 'node:fs';
@@ -83,6 +84,26 @@ for (const f of flies) {
   if (!new RegExp(`dataset\\.fly\\s*===\\s*['"]${f}['"]`).test(js)) bad(`data-fly="${f}" is never handled in the engine`);
 }
 if (flies.length && !fail) ok(`flies handled (${flies.join(', ')})`);
+
+/* ---------- device chrome: phone + iPad scaffolding is an INVARIANT ----------
+ * The template ships full screen, swipe nav, the letterbox mask, station culling, the rail
+ * window and phone-size HUD rules. A builder that rewrites the HUD or engine tends to drop
+ * them silently; a deck without them still looks fine on the builder's desktop. Gate them. */
+const chrome = [
+  ['viewport-fit=cover',          () => /viewport-fit=cover/.test(markup),                 'meta viewport lacks viewport-fit=cover (safe-area insets are dead)'],
+  ['#fsbtn',                      () => /\bid="fsbtn"/.test(markup),                        'no #fsbtn — the full-screen toggle button is gone'],
+  ['#rotatehint',                 () => /\bid="rotatehint"/.test(markup),                   'no #rotatehint — portrait phones get an unreadable 16:9 frame'],
+  ['F key',                       () => /e\.key\s*===\s*['"]f['"]/.test(js),               'F does not toggle full screen'],
+  ['swipe nav',                   () => /addEventListener\(\s*['"]touchend['"]/.test(js),   'no touchend listener — swipes do nothing'],
+  ['letterbox mask',              () => /clipPath/.test(js),                               'no clip-path mask — neighbouring stations leak into the letterbox bars'],
+  ['station culling',             () => /pointer:\s*coarse/.test(js) && /visibility/.test(js), 'no touch culling — mobile Safari will kill the tab on long decks'],
+  ['rail window',                 () => /railWindow\s*\(/.test(js),                        'no railWindow — the dots overflow the HUD past ~25 stations'],
+  ['(pointer: coarse) CSS',       () => /@media[^{]*pointer:\s*coarse/.test(markup),       'no (pointer: coarse) media query — touch chrome never adapts'],
+  ['phone-size CSS',              () => /@media[^{]*max-width:\s*7\d\dpx/.test(markup),    'no phone-size media query — HUD does not fit a phone'],
+];
+const missing = chrome.filter(([, test]) => !test());
+missing.forEach(([, , why]) => bad('device chrome:', why));
+if (!missing.length) ok('device chrome intact (full screen, swipe, mask, culling, rail window, phone CSS)');
 
 /* ---------- classes used but never styled ---------- */
 const styled = new Set();

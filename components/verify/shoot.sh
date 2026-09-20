@@ -2,7 +2,10 @@
 # Deckadence still-mode screenshots — Tier 1 of references/pitfalls.md.
 #   components/verify/shoot.sh deck/index.html            # every station
 #   components/verify/shoot.sh deck/index.html s3 s7      # named stations only
-# Writes .shots/<station-id>.png next to the deck, then you READ the images.
+#   DECK_SHOT=phone components/verify/shoot.sh deck/index.html   # phone landscape (also: ipad)
+# Writes .shots/<station-id>.png next to the deck (.shots/<preset>/ for phone/ipad), then
+# you READ the images. Decks get read on phones and iPads after the talk: shoot the phone
+# preset before declaring done — the letterbox mask and phone HUD only show up there.
 #
 # Shoots with ?still=1 (flat mode). Without it a headless screenshot lands mid-animation and
 # photographs an EMPTY station, which looks like a pass and hides every layout bug.
@@ -13,11 +16,17 @@ DECK="${1:?usage: shoot.sh <deck.html> [station-id ...]}"
 shift || true
 [ -f "$DECK" ] || { echo "no such file: $DECK" >&2; exit 1; }
 ROOT="$(cd "$(dirname "$DECK")" && pwd)"; PAGE="$(basename "$DECK")"
-OUT="$ROOT/.shots"; mkdir -p "$OUT"
-
 # Non-16:9 on purpose: the letterbox bars only appear off-16:9, and bars whose tone does not
 # match the station are a real bug you cannot see in a 1920x1080 shot.
-W="${DECK_SHOT_W:-1600}"; H="${DECK_SHOT_H:-1000}"
+# Presets are CSS-px viewports (landscape — the deck asks portrait phones to rotate):
+#   desktop 1600x1000 · phone 844x390 (iPhone 14) · ipad 1180x820 (iPad Air)
+case "${DECK_SHOT:-desktop}" in
+  phone) W=844;  H=390; ;;
+  ipad)  W=1180; H=820; ;;
+  *)     W=1600; H=1000; ;;
+esac
+W="${DECK_SHOT_W:-$W}"; H="${DECK_SHOT_H:-$H}"
+OUT="$ROOT/.shots"; [ "${DECK_SHOT:-desktop}" = desktop ] || OUT="$OUT/$DECK_SHOT"; mkdir -p "$OUT"
 
 # ---------- stations ----------
 if [ "$#" -gt 0 ]; then STATIONS=("$@"); else

@@ -24,9 +24,12 @@ the whole point is decks that DON'T all look the same.
 
 Copy `template/starter.html` (next to this file) into the user's project — `deck/index.html`
 is a good default — and set its `<title>`. It contains the complete working engine:
-world/camera/render, fitted 1920×1080 stations, HUD rail, keyboard nav, overview, deep
-links, the generic intro (line-rise + fades), and one example scene (SVG stroke-draw +
-pulse). **Modify the template; never rebuild the engine from scratch.**
+world/camera/render, fitted 1920×1080 stations, HUD rail (windowed past ~25 stations),
+keyboard nav, a full-screen toggle (button + `F`), overview, deep links, the generic intro
+(line-rise + fades), one example scene (SVG stroke-draw + pulse), and the **phone/iPad
+layer**: swipe nav, letterbox mask, station culling, rotate hint, safe-area HUD. **Modify
+the template; never rebuild the engine from scratch, and never strip the chrome** — the
+static gate (`check.mjs`) fails a deck that lost it.
 Re-skin = swap the `:root` token block, the font `<link>`, and the `PACE` constant —
 nothing else. Tokens a direction doesn't list (e.g. `--line`, `--ease-expo`) keep their
 template defaults.
@@ -60,8 +63,8 @@ station shot mid-rise photographs as an empty frame and hides every layout bug. 
 static gates and walk the deck with arrow keys for the motion. Full recipe and what headless
 can NOT tell you: `references/pitfalls.md`.
 
-Tell the user: arrows/Space navigate, `O` = overview, dots jump, `#sN` deep-links, and to
-**vendor anime.js locally before show day**.
+Tell the user: arrows/Space navigate, `O` = overview, `F` = full screen, dots jump, `#sN`
+deep-links, swipe on phones/iPads, and to **vendor anime.js locally before show day**.
 
 ## Hard rules (each one earned the hard way)
 
@@ -83,6 +86,11 @@ Tell the user: arrows/Space navigate, `O` = overview, dots jump, `#sN` deep-link
 11. **A station reveals on ARRIVAL, never at departure** — and any custom fly you add must
     dispatch that reveal itself, or the station arrives dead.
 12. **Never ship a deck you have not looked at.** `?still=1` + a screenshot per station.
+13. **Every deck is phone- and iPad-friendly out of the box.** The full-screen button,
+    swipe nav, letterbox mask, culling, rotate hint and phone HUD ship in the template and
+    stay in: keep `#fsbtn`/`#rotatehint` when you redesign the HUD, keep the `(pointer:
+    coarse)` and phone-size media queries when you restyle, and shoot the `phone` preset
+    before declaring done. Decks get read on phones after the talk.
 
 ## Reference map (read on demand)
 
@@ -102,9 +110,8 @@ Each file's header carries its own WHAT / SPLICE / NEEDS / WIRE. Read the one yo
 | Component | Reach for it when |
 |---|---|
 | `components/verify/check.mjs` | after EVERY edit — static gates, exits nonzero |
-| `components/verify/shoot.sh` | before declaring done — a still screenshot per station |
+| `components/verify/shoot.sh` | before declaring done — a still screenshot per station (`DECK_SHOT=phone` too) |
 | `components/scenes/reveal.js` | a station holds a question, then reveals on the presenter's key |
-| `components/addons/rail-window.js` | the deck passes ~25 stations and the HUD rail overflows |
 | `components/addons/fly-through-overview.js` | one station should arrive via the map |
 | `components/addons/site-iframe.js` | a station IS a real website, scrolled live |
 | `components/svg/iso-box.js` | an isometric scene of PHYSICAL space (factory, building, line) |

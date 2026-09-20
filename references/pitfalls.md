@@ -76,6 +76,19 @@ Every trap here has actually bitten. Check this list before declaring a deck don
     content VANISH mid-transition. Freeze on leave (cancel timers, pause tweens, keep the
     last frame painted); do the real teardown at the top of `run()` on re-entry, so at most
     one heavyweight context exists at a time.
+16. **A HUD redesign that drops the phone chrome.** The deck looks perfect on the desktop
+    it was built on, and on a phone the full-screen button is gone, swipes do nothing, the
+    neighbouring station peeks through the letterbox bars, and 30 dots overflow the HUD.
+    Every one of these was fixed once and lost once. `#fsbtn`, `#rotatehint`, the
+    `(pointer: coarse)` block, the phone-size media query and `railWindow` / `maskToStation`
+    / `updateCulling` are engine, not decoration — `check.mjs` fails a deck without them.
+17. **iPhone Safari has no element fullscreen** (iPad and Android do). `requestFullscreen`
+    is undefined there; the engine hides the button and sets `body.no-fullscreen` so copy can
+    offer the honest path (Share → Add to Home Screen). Do not "fix" the missing button.
+18. **Swipes die inside iframes.** A live-site station with an interactive iframe eats the
+    touch; the reader is stuck. The `(pointer: coarse)` block sets `pointer-events: none`
+    on station iframes — keep it, and on phones prefer a pre-rendered still to a live site
+    (memory: live iframes are what kills the tab).
 
 ## Verifying an animated deck (do this — don't ship blind)
 
@@ -122,6 +135,9 @@ browser by hand:
   `pkill -f msedge` also matches the invoking script's own command line; match on
   `msedge.exe --headless` instead.
 - Shoot by **station id** (`#s3`), never by index — indices shift on every insert.
+- Shoot the **`DECK_SHOT=phone`** preset (844×390) as well: the letterbox mask, the windowed
+  rail and the phone-size HUD only exist at that size, and a HUD that overflows a phone is
+  invisible in a 1600×1000 shot. `ipad` (1180×820) for the 4:3 case.
 
 **Tier 2 — CDP for MOTION (only when the timing itself is the question):** still mode
 cannot verify choreography. Drive the browser over CDP (Node ≥ 22 has global
@@ -143,6 +159,7 @@ per-beat reveals cannot be advanced or captured; live WebGL is unreliable. Verif
 beats, and WebGL in a real browser, live.
 
 **Pre-show checklist:** vendored fonts + anime.js (no network) · full keyboard pass ·
-overview (`O`) looks intentional · letterbox tone correct on a non-16:9 window · deep-link
-boot works on the first AND last stations · every station shot in `?still=1` and LOOKED at ·
-presenter knows: arrows, O, dots.
+overview (`O`) looks intentional · letterbox tone correct on a non-16:9 window · full-screen
+button present and `F` works · deep-link boot works on the first AND last stations · every
+station shot in `?still=1` and LOOKED at, desktop AND `phone` preset · `check.mjs` reports
+"device chrome intact" · presenter knows: arrows, O, F, dots; readers know: swipe.
