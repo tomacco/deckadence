@@ -3,9 +3,9 @@
 How the spatial deck works, from zero. The CORE engine (world, camera, fitZoom, goto,
 generic intro, HUD, overview, dive, deep links, scene registry) ships working in
 `template/starter.html` — copy that file as your starting point; never rebuild the engine
-from scratch. Two features are **[ADD-ON]** recipes you splice in only when the talk needs
-them: the fly-through-overview move and the full-screen site showcase. Complete code for
-both is below.
+from scratch. Two features are **[ADD-ON]**s you splice in only when the talk needs them —
+the fly-through-overview move and the full-screen site showcase. Both live as real files in
+`components/addons/`, with their wiring in each file's header.
 
 ## Mental model
 
@@ -35,8 +35,32 @@ Navigation is just "tween the camera to the next station's center at its fitting
 > fixed-size frame inside the screen with margins around it.
 
 > **The letterbox follows the station tone.** On non-16:9 screens the fitted frame leaves
-> bars. The `dark-hud` body class flips the viewport background so bars are dark behind dark
-> stations.
+> bars. The `invert-hud` body class flips the viewport background so bars are dark behind
+> dark stations. Tone is deliberately split out of `setHud()` into `setTone()` because it is
+> VISIBLE DURING A FLY: `goto()` fires it at the camera's midpoint, not at t=0, or the bars
+> wear the destination's tone while the departing station is still on screen.
+
+> **A station reveals on ARRIVAL.** `revealStation(s)` is the single dispatch point — the
+> station's scene if it has one, else the generic intro — called from the fly's `done`
+> callback and from the boot deep-link path, so the two can never drift. Fired at t=0
+> instead, a scene plays its opening beats to a camera still in transit.
+
+## Timing hooks on a fly
+
+Both camera moves take `{ mid, done }`. `mid` fires ~55% through (state changes that must
+hide inside the move: tone, letterbox, anything that repaints the viewport); `done` fires on
+arrival (the reveal). A same-station replay (`Esc`/`↓`) has no flight to wait for, so it sets
+tone and reveals immediately. A nav token guards both callbacks, so a fly the presenter
+interrupts never reveals over another station.
+
+**If you add a custom fly, it MUST dispatch the reveal itself** (call `done`, or
+`revealStation(s)` in its `onComplete`). A custom fly that early-returns past the reveal
+leaves the station arriving dead — this is the single easiest way to break the engine.
+
+`?still=1` short-circuits both moves: the camera jumps, `mid`/`done` fire synchronously, and
+`playIntro` paints final states instead of animating. That mode is what makes screenshots
+usable (`pitfalls.md`, Tier 1); a scene whose CSS rest state is hidden can expose an
+optional `still(el)` to paint its own flat frame.
 
 ## Layout: the monotone down/right staircase
 
@@ -49,34 +73,35 @@ staircase: x and y non-decreasing in DOM order, each step either pure right or p
   crop, `0.55` for a pull-back) or a `data-fly="dive"` transition when you want depth.
 
 **Every station insert/delete forces a re-layout of everything after it.** This is a known
-recurring manual task. After ANY change to the station list, save this as
-`verify-staircase.mjs` next to the deck and run `node verify-staircase.mjs deck/index.html`:
+recurring manual task, so it is a script, not a habit:
 
-```js
-import { readFileSync } from 'node:fs';
-const file = process.argv[2] || 'deck/index.html';
-const html = readFileSync(file, 'utf8');
-const s = [...html.matchAll(/<section\b[^>]*\bclass="[^"]*\bstation\b[^"]*"[^>]*>/g)].map(m => {
-  const tag = m[0];
-  const attr = n => { const a = tag.match(new RegExp(n + '="(-?[\\w-]+)"')); return a ? a[1] : null; };
-  return { id: attr('id'), x: +attr('data-x'), y: +attr('data-y') };
-});
-if (!s.length || s.some(t => Number.isNaN(t.x) || Number.isNaN(t.y))) {
-  console.log('FAIL: parsed', s.length, 'stations (missing data-x/data-y?)'); process.exit(1);
-}
-let ok = true;
-for (let i = 1; i < s.length; i++) {
-  const dx = s[i].x - s[i-1].x, dy = s[i].y - s[i-1].y;
-  if (!((dx > 0 && dy === 0) || (dy > 0 && dx === 0))) {
-    ok = false; console.log('BAD', s[i-1].id, '->', s[i].id, 'dx=' + dx, 'dy=' + dy);
-  }
-}
-console.log(s.length, 'stations', ok ? 'OK' : 'FAIL');
-process.exit(ok ? 0 : 1);
+```bash
+node components/verify/check.mjs deck/index.html    # after EVERY edit
 ```
 
-It parses attributes in any order and FAILS loudly on zero matches — a station the regex
-can't parse must never silently pass.
+It gates the staircase plus the other things that fail silently — duplicate ids, an engine
+syntax error, a `data-scene` that is never registered, a `data-fly` the engine does not
+handle — and exits nonzero, so it can gate a commit. It FAILS loudly on zero parsed stations:
+a station the regex cannot read must never quietly pass. It cannot see layout overflow; that
+needs `components/verify/shoot.sh` and your eyes.
+
+## Long decks: sections as territories (25+ stations)
+
+Past roughly 25 stations the plane stops being decoration and becomes the structure — the
+overview should read as a map of the talk.
+
+- **One territory per section, contiguous on the staircase.** Advance mostly DOWN within a
+  territory and take one long RIGHT step between them, so zooming out shows sections as
+  columns. The spatial layout then *is* the agenda.
+- **Scope a section's palette with a data attribute** on the station
+  (`<section class="station" data-section="2">` + `[data-section="2"]{--accent:…}`) rather
+  than per-station overrides. Re-skinning a whole territory becomes one token block.
+- A section with no palette of its own **inherits the previous one**. That is a fine choice
+  and a bad accident — decide it on purpose, and write down that you did.
+- **The HUD rail does not scale.** One dot per station overflows into the key hints past ~25.
+  Splice `components/addons/rail-window.js`: it windows the dots around the current one and
+  tapers the ends, sized from the measured gap between the HUD's corner text rather than a
+  hardcoded count.
 
 ## Camera moves
 
@@ -90,26 +115,11 @@ can't parse must never silently pass.
 Keep moves tasteful. The camera serves the narrative; Prezi-style vertigo is cheap. One
 spatial *flourish* per deck (an overview fly-through near the end) is usually enough.
 
-**[ADD-ON] fly-through-overview** — not in the template; add it when one station should
-arrive "via the map". Mark the station `data-fly="through-overview"`, branch in `goto()`
-before the other fly checks (`if (s.el.dataset.fly === 'through-overview' && isNew) { flyThroughOverview(s); return; }`
-— it owns its own intro), and add:
-
-```js
-function flyThroughOverview(s) {
-  busy = true;
-  const c = overviewCam();
-  const target = { x: s.cx, y: s.cy, zoom: fitZoom(s) };
-  animate(cam, { x: c.x, y: c.y, zoom: c.zoom, duration: 1000 * MOTION, ease: EASE, onUpdate: render,
-    onComplete: () => setTimeout(() => {
-      playIntro(s, true);   // fire the reveal as the camera arrives
-      animate(cam, { x: target.x, y: target.y, zoom: target.zoom,
-        duration: 1150 * MOTION, ease: EASE, onUpdate: render,
-        onComplete: () => { busy = false; } });
-    }, 480)
-  });
-}
-```
+**[ADD-ON] fly-through-overview** — **code: `components/addons/fly-through-overview.js`**.
+Add it when one station should arrive "via the map": pull out to the overview, hold 480 ms
+(the hold IS the beat), then dive in. Its header carries the `goto()` wiring. Because it owns
+the whole move it must dispatch the reveal and the tone flip itself — that is what the
+`{ mid, done }` callbacks are for.
 
 ## Navigation & input (already wired in the template)
 
@@ -125,65 +135,11 @@ function flyThroughOverview(s) {
 
 ## [ADD-ON] Stations that ARE a website (full-screen showcase)
 
-Not in the template — splice this in when the talk dives into real pages.
-To "dive into" a page mid-talk, make the station a true 1920×1080 viewport holding an
-iframe, then auto-scroll the page content:
+**Code: `components/addons/site-iframe.js`** (markup, CSS and wiring are in its header).
+Splice it in when the talk dives into real pages: the station becomes a true 1920×1080
+viewport holding an iframe, and the PAGE scrolls, not the frame.
 
-```html
-<section class="station site-full" id="s7" data-name="Demo site" data-x="9200" data-y="2900"
-         data-fly="dive" data-scroll="6000">
-  <iframe class="site-frame" src="../sites/demo/index.html"></iframe>
-</section>
-```
-
-```css
-.station.site-full { padding: 0; overflow: hidden; }
-.site-frame { position: absolute; top: 0; left: 0; width: 1920px; height: 1080px;
-              border: 0; pointer-events: none; background: #fff; }
-```
-
-```js
-let siteScrollAnim = null;
-function sizeSiteFrame(f) {
-  try {
-    const doc = f.contentDocument || f.contentWindow.document;
-    if (!doc.getElementById('__deck_noscroll')) {       // hide the page's scrollbar
-      const st = doc.createElement('style'); st.id = '__deck_noscroll';
-      st.textContent = 'html,body{scroll-behavior:auto!important;scrollbar-width:none}' +
-        'html::-webkit-scrollbar,body::-webkit-scrollbar{width:0;height:0;display:none}';
-      (doc.head || doc.documentElement).appendChild(st);
-    }
-    const h = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 1080);
-    f.dataset.dist = String(Math.max(0, h - 1080));     // content scroll range
-  } catch (e) { f.dataset.dist = '0'; }                  // cross-origin → no scroll
-}
-function stopSiteScroll() {
-  if (siteScrollAnim) { try { siteScrollAnim.pause(); } catch (e) {} siteScrollAnim = null; }
-  document.querySelectorAll('.site-frame').forEach(f => {
-    try { f.contentWindow.scrollTo({ top: 0, behavior: 'auto' }); } catch (e) {} });
-}
-function runSiteScroll(s) {
-  const f = s.el.querySelector('.site-frame');
-  if (!f) return;
-  let win; try { win = f.contentWindow; win.scrollTo({ top: 0, behavior: 'auto' }); } catch (e) { return; }
-  sizeSiteFrame(f);                       // recompute now that fonts/images settled
-  const dist = +f.dataset.dist || 0;
-  if (dist <= 0) return;                  // the scroll IS content — runs even under reduced-motion
-  const proxy = { y: 0 };
-  siteScrollAnim = animate(proxy, {
-    y: dist, duration: +s.el.dataset.scroll || 6000, ease: 'inOutSine',
-    // behavior:'auto' beats the page's own scroll-behavior:smooth (stutter-then-snap)
-    onUpdate: () => { try { win.scrollTo({ top: proxy.y, behavior: 'auto' }); } catch (e) {} }
-  });
-}
-// Wire into the engine: at boot, attach load listeners —
-//   document.querySelectorAll('.site-frame').forEach(f => f.addEventListener('load', () => sizeSiteFrame(f)));
-// In goto(): call stopSiteScroll() next to the scene stops, and after the fly:
-//   if (s.el.dataset.scroll && isNew) {
-//     const token = cur, flyDur = (s.el.dataset.fly === 'dive') ? 1750 : 1150;
-//     setTimeout(() => { if (cur === token && !overview) runSiteScroll(s); }, flyDur * MOTION + 350);
-//   }
-```
+The reasons it is shaped that way, because each one was a bug:
 
 - Keep the iframe element at exactly **1920×1080** so the page's own `100vh` layout reads at
   real proportions. **Do NOT resize the iframe to its content height** — an iframe's

@@ -45,25 +45,87 @@ Every trap here has actually bitten. Check this list before declaring a deck don
     `getTotalLength` on text-adjacent paths) should run after `document.fonts.ready` or
     after a settle delay; recompute scroll distances on a second pass.
 
+12. **A heading that clips its cap-tops ONCE on a cold load.** Fingerprint: it happens on
+    the first visit with an empty cache and never again. That is a font race, NOT an
+    overflow or line-height bug — do not chase it as geometry. The line-rise wraps each
+    line in an `overflow:hidden` mask; if the display font is `font-display:swap` and not
+    preloaded it can swap in MID-rise, and the taller cap metrics clip against the
+    still-closing mask for a frame. Once cached the intro never coincides with a swap
+    again. **Any mask-then-reveal must run at FINAL font metrics:** the template gates the
+    first reveal on `document.fonts.ready`; preload the display face so that gate resolves
+    instantly instead of delaying the open.
+
+13. **Revealing at departure instead of arrival.** Dispatching a station's scene or intro
+    at the START of the fly means its opening beats play to a camera still in transit — on
+    a 1750 ms `dive`, most of the choreography happens while the audience is watching from
+    across the plane. The template reveals in the fly's `done` callback
+    (`revealStation`); a same-station replay reveals immediately because there is no
+    flight to wait for. **Any custom fly you add must dispatch the reveal itself** or the
+    station arrives dead.
+
+14. **State that flips mid-transition.** The letterbox bars paint the viewport background
+    and the HUD ink flips with them, so toggling tone at t=0 repaints to the DESTINATION
+    tone while the station being LEFT is still on screen. Time any visible state change to
+    the point where the move HIDES it (the template's `mid` callback, ~55% through), not to
+    where the transition begins. This is an ordering bug, and it looks exactly like a
+    missing-remask bug — do not fix it by adding masks.
+
+15. **`stop()` must FREEZE, not dispose.** Scenes are stopped at the start of a navigation,
+    and the station being left stays on screen for the whole fly (and in the overview). A
+    `stop()` that disposes, `removeChild`s, or force-loses a WebGL context makes the
+    content VANISH mid-transition. Freeze on leave (cancel timers, pause tweens, keep the
+    last frame painted); do the real teardown at the top of `run()` on re-entry, so at most
+    one heavyweight context exists at a time.
+
 ## Verifying an animated deck (do this — don't ship blind)
 
-Static screenshots fire too early for animated content. Two tiers:
+**Never declare a visual artifact done without having SEEN it.** Layout bugs — overflowing
+text, colliding labels, misaligned SVG — are invisible in source and obvious in a
+screenshot. Three tiers, cheapest first.
 
-**Tier 1 — structural (always):**
-- Run the staircase verification script after layout changes.
-- Open every station via deep link (`#sN`) in a real browser; watch the intro; press `→`
-  through the whole deck once.
+**Tier 0 — static gates (no browser, after every edit):**
 
-**Tier 2 — automated visual states (for complex scenes):** drive headless Chrome over CDP
-(Node ≥ 22 has global `WebSocket`/`fetch`; no puppeteer install needed):
-
-```
-chrome --headless=new --disable-gpu --hide-scrollbars --window-size=1920,1080
-       --remote-debugging-port=9222 --user-data-dir=<UNIQUE TEMP DIR>
-       "http://127.0.0.1:8000/deck/index.html#s5"
+```bash
+node components/verify/check.mjs deck/index.html
 ```
 
-In the CDP script:
+Staircase · duplicate ids · engine syntax · `data-scene` registered · `data-fly` handled ·
+unstyled classes. Exits nonzero, so it can gate a commit. What it cannot do is arithmetic on
+your layout: sum a station's content heights against the usable frame height yourself — a
+station that overflows 1080 px is a guaranteed visual bug findable without a browser.
+
+**Tier 1 — still-mode screenshots (the workhorse).** A headless screenshot of an animated
+station lands mid-rise and photographs as an EMPTY frame, so it "passes" while hiding every
+layout bug. Shoot with **`?still=1`** — the template's flat mode: camera jumps, no entrance
+animation, every element painted at its final state.
+
+```bash
+components/verify/shoot.sh deck/index.html          # every station -> deck/.shots/<id>.png
+components/verify/shoot.sh deck/index.html s3 s7    # just these two
+```
+
+It serves the deck on a free port, discovers the station ids, shoots each one, and copies the
+PNGs back for you to READ. Gitignore `.shots/`. The rules it encodes, if you ever drive the
+browser by hand:
+
+- Use `--run-all-compositor-stages-before-draw`, **not** `--virtual-time-budget` — the
+  latter shoots before a late external stylesheet applies (blank white frame) and hangs on
+  an endless `requestAnimationFrame` loop. A blank frame is a load race: retry once.
+- **Unique `--user-data-dir` per run.** Concurrent headless browsers sharing one lock
+  produce 0-byte screenshots.
+- Shoot a **non-16:9 window** (1600×1000) on purpose — that is the only way letterbox bars
+  appear, and mismatched bars are a real bug (trap 14).
+- The browser **exits nonzero even on success**: poll for a non-empty output file, never
+  trust the exit code. Wrap in `timeout`. One shot per invocation.
+- Under WSL, a Windows browser binary needs a **Windows** output path — write into
+  `%LOCALAPPDATA%\Temp` and copy the PNG back into Linux to read it. Killing strays with
+  `pkill -f msedge` also matches the invoking script's own command line; match on
+  `msedge.exe --headless` instead.
+- Shoot by **station id** (`#s3`), never by index — indices shift on every insert.
+
+**Tier 2 — CDP for MOTION (only when the timing itself is the question):** still mode
+cannot verify choreography. Drive the browser over CDP (Node ≥ 22 has global
+`WebSocket`/`fetch`; no puppeteer install needed) with `--remote-debugging-port=9222`, then:
 - `Emulation.setEmulatedMedia({features:[{name:'prefers-reduced-motion',value:'no-preference'}]})`
   then `Page.reload` — otherwise headless reports reduced-motion.
 - Wait for the scene's beats (real `setTimeout`s), then `Page.captureScreenshot` at known
@@ -73,10 +135,14 @@ In the CDP script:
 - Subscribe to `Runtime.exceptionThrown` — a silent JS error usually means a dead scene.
 
 Gotchas: navigating to a hash-only URL on an already-loaded page does NOT re-run boot — use
-a fresh launch or `Page.reload`. Concurrent headless Chromes sharing a `--user-data-dir`
-lock → 0-byte screenshots; use a unique temp dir per run. Screenshot output paths must be
-ABSOLUTE on Windows.
+a fresh launch or `Page.reload`. Screenshot output paths must be ABSOLUTE.
+
+**What headless CANNOT tell you** — do not read these as defects, and do not "fix" them:
+a presenter-stepped station correctly renders as heading-only at rest; transitions and
+per-beat reveals cannot be advanced or captured; live WebGL is unreliable. Verify motion,
+beats, and WebGL in a real browser, live.
 
 **Pre-show checklist:** vendored fonts + anime.js (no network) · full keyboard pass ·
 overview (`O`) looks intentional · letterbox tone correct on a non-16:9 window · deep-link
-boot works on the first AND last stations · presenter knows: arrows, O, dots.
+boot works on the first AND last stations · every station shot in `?still=1` and LOOKED at ·
+presenter knows: arrows, O, dots.
