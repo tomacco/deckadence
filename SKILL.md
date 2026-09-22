@@ -68,8 +68,12 @@ Tell the user: arrows/Space navigate, `O` = overview, dots jump, `#sN` deep-link
 1. **Every station gets a transition** — even subtle. Never a bare cut.
 2. **One element owns each moment.** If two things pulse, neither is the focus.
 3. **Split headings into LINES, never characters** — char-splitting breaks words mid-word.
-4. **Set initial state BEFORE elements are visible** (reset/play split) — or the final
-   state flashes on reveal.
+4. **ARM at departure, PLAY on arrival.** Stage a station's from-state BEFORE the camera
+   leaves (`armStation`), and run its animation only when the flight lands (`revealStation`).
+   Staging only on arrival means the audience reads the FINISHED slide for the whole flight and
+   then watches it reset and rebuild itself — that is the flash. Every custom scene must expose
+   `arm(el)` next to its `run(el)`. Enforced by `components/verify/motion-check.mjs`, not by
+   remembering this rule.
 5. **Never override a station's `position`** — it must stay `position:absolute`.
 6. **Motion is content**: under `prefers-reduced-motion`, scale durations down — never cut
    animations entirely.
@@ -81,7 +85,8 @@ Tell the user: arrows/Space navigate, `O` = overview, dots jump, `#sN` deep-link
    tone": the dark station on a light direction, the light one on a dark-first direction.
 10. **One accent color per station, used deliberately.**
 11. **A station reveals on ARRIVAL, never at departure** — and any custom fly you add must
-    dispatch that reveal itself, or the station arrives dead.
+    dispatch that reveal itself, or the station arrives dead. This is the mirror of rule 4:
+    arming happens at departure, revealing on arrival. Both halves or neither.
 12. **Never ship a deck you have not looked at.** `?still=1` + a screenshot per station.
 
 ## Reference map (read on demand)
@@ -102,6 +107,7 @@ Each file's header carries its own WHAT / SPLICE / NEEDS / WIRE. Read the one yo
 | Component | Reach for it when |
 |---|---|
 | `components/verify/check.mjs` | after EVERY edit — static gates, exits nonzero |
+| `components/verify/motion-check.mjs` | after ANY engine/scene edit — asserts arm-at-departure / play-on-arrival (rule 4), exits nonzero |
 | `components/verify/shoot.sh` | before declaring done — a still screenshot per station |
 | `components/scenes/reveal.js` | a station holds a question, then reveals on the presenter's key |
 | `components/addons/rail-window.js` | the deck passes ~25 stations and the HUD rail overflows |

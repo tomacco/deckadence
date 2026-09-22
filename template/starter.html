@@ -357,6 +357,9 @@
     // Same-station replay (Esc/↓): no flight to wait for, so reveal at once. Scenes were
     // stopped above and must never be left frozen mid-draw.
     if (!isNew) { setTone(i); flyTo({ x: s.cx, y: s.cy, zoom: fitZoom(s) }, opts); reveal(); return; }
+    // Stage the destination's from-state BEFORE the camera leaves, or it is read at its final
+    // state for the whole fly and then visibly resets on arrival.
+    armStation(s);
     if (s.el.dataset.fly === 'dive') flyDive(s, { mid, done: reveal });
     else flyTo({ x: s.cx, y: s.cy, zoom: fitZoom(s) }, { ...opts, mid, done: reveal });
   }
@@ -391,28 +394,44 @@
   // Release the clip masks once lines land, so descenders are never cropped.
   function releaseClips(el) { el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'visible'; }); }
 
-  function playIntro(s, isNew) {
-    if (!isNew) return;
-    const el = s.el;
-    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });  // re-mask for replays
+  // The exact set the generic intro animates. Factored out so the ARM path and the PLAY path
+  // can never disagree about what they stage — the two drifting apart is what shipped the flash.
+  function introTargets(el) {
     el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
     el.querySelectorAll('[data-split="lines"]').forEach(fitHeading);
-    const lines = el.querySelectorAll('.lineInner');
+    const lines = [...el.querySelectorAll('.lineInner')];
     const fades = Array.from(el.querySelectorAll('[data-fade]'));
     let autos = [];
     if (!lines.length && !fades.length) {
       autos = Array.from(el.children).filter(c => getComputedStyle(c).position !== 'absolute');
     }
-    const fadeTargets = [...fades, ...autos];
+    return { lines, fadeTargets: [...fades, ...autos] };
+  }
+
+  /* ARM: stage the from-state and animate NOTHING. goto() calls this at DEPARTURE.
+     HARD RULE: arm at departure, play on arrival. A station staged only on ARRIVAL is visible
+     at its FINAL state for the whole flight, and then visibly resets and rebuilds itself —
+     that is the flash. Idempotent, so boot deep-link and same-station replay may call it with
+     no flight in progress. */
+  function armIntroEl(el) {
+    if (STILL) return;
+    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });  // re-mask for replays
+    const { lines, fadeTargets } = introTargets(el);
+    if (lines.length) utils.set(lines, { translateY: '100%' });
+    if (fadeTargets.length) utils.set(fadeTargets, { opacity: 0, translateY: 22 });
+  }
+
+  function playIntro(s, isNew) {
+    if (!isNew) return;
+    const el = s.el;
+    const { lines, fadeTargets } = introTargets(el);
     if (STILL) {                     // flat final frame: what a screenshot must show
       releaseClips(el);
       if (lines.length) utils.set(lines, { translateY: '0%' });
       if (fadeTargets.length) utils.set(fadeTargets, { opacity: 1, translateY: 0 });
       return;
     }
-    // initial state BEFORE visible (guard empty lists — anime warns on no targets)
-    if (lines.length) utils.set(lines, { translateY: '100%' });
-    if (fadeTargets.length) utils.set(fadeTargets, { opacity: 0, translateY: 22 });
+    armIntroEl(el);                  // no-op if goto() already armed at departure
     if (lines.length) animate(lines, { translateY: ['100%', '0%'], duration: 1150 * MOTION,
       delay: anime.stagger(150 * MOTION), ease: EASE, onComplete: () => releaseClips(el) });
     else releaseClips(el);
@@ -431,6 +450,15 @@
     if (STILL) { if (sc && sc.still) sc.still(s.el); playIntro(s, true); return; }
     if (sc) { sc.run(s.el); return; }
     playIntro(s, true);
+  }
+
+  // The arm-side twin of revealStation, so the departure path cannot drift from the arrival one.
+  // A scene may expose arm(el) for its own from-state; otherwise the generic one applies.
+  function armStation(s) {
+    if (STILL) return;
+    const name = s.el.dataset.scene, sc = name && sceneRegistry[name];
+    if (sc && sc.arm) { sc.arm(s.el); return; }
+    armIntroEl(s.el);
   }
 
   /* ---------- example scene: "diagram" (stroke-draw + pulse) ----------
@@ -469,21 +497,31 @@
       diagramScene.anims.forEach(a => { try { a.pause(); } catch (e) {} });
       diagramScene = null;
     },
+    // ARM: from-state only, no animation. goto() calls this at DEPARTURE so the diagram is
+    // never seen fully drawn while the camera is still flying toward it. Idempotent, so run()
+    // calls it too and the boot/replay paths cannot drift from the navigation path.
+    arm(el) {
+      if (STILL) return;
+      const q = s => el.querySelectorAll(s);
+      armIntroEl(el);                                  // headings + any data-fade copy
+      const eb = el.querySelector('.eyebrow');
+      if (eb) utils.set(eb, { opacity: 0 });           // the scene owns the eyebrow, not data-fade
+      q('.node').forEach(n => utils.set(n, { opacity: 0 }));
+      q('.wire').forEach(p => {
+        let L = 0; try { L = p.getTotalLength(); } catch (e) { L = 0; }
+        if (!L) return;                                // not laid out yet: skip rather than freeze
+        p.style.strokeDasharray = L; p.style.strokeDashoffset = L;
+      });
+      utils.set([...q('.pulse')], { opacity: 0 });
+    },
     run(el) {
       sceneRegistry.diagram.stop();
       const scene = { cancelled: false, timers: [], anims: [] };
       diagramScene = scene;
       const q = s => el.querySelectorAll(s);
-      // reset: initial state BEFORE anything is visible — no final-state flash
-      el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });
-      el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
+      sceneRegistry.diagram.arm(el);                   // idempotent; covers boot and replay
       const lines = el.querySelectorAll('.lineInner');
-      utils.set(lines, { translateY: '100%' });
-      utils.set(el.querySelector('.eyebrow'), { opacity: 0 });
       const nodes = [...q('.node')], wires = [...q('.wire')], pulses = [...q('.pulse')];
-      nodes.forEach(n => utils.set(n, { opacity: 0 }));
-      wires.forEach(p => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; });
-      utils.set(pulses, { opacity: 0 });
       (async () => {
         scene.anims.push(animate(el.querySelector('.eyebrow'), { opacity: [0, .55], duration: 500 * MOTION }));
         scene.anims.push(animate(lines, { translateY: ['100%', '0%'], duration: 1000 * MOTION, ease: EASE,
