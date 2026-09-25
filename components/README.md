@@ -32,6 +32,7 @@ COMPONENT · WHAT · SPLICE (where in the single file) · NEEDS (globals it expe
 | `addons/fly-through-overview.js` | one station arrives via the map (the deck's single flourish) |
 | `addons/site-iframe.js` | a station IS a real website, scrolled live |
 | `svg/iso-box.js` | an isometric scene of PHYSICAL space (factory, building, line) |
+| `edit/` | **not spliced**: the edit-mode dev server (`serve.mjs`), the layer it injects (`edit.js`, `edit.css`), the agent CLI (`review.mjs`) and the source/sidecar modules. See `references/edit.md` |
 
 Directions (the `:root` token sets) deliberately stay in `references/design.md`: choosing a
 direction and applying it are the same act, so splitting them would only add a round trip.

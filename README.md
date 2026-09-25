@@ -35,6 +35,10 @@ this skill was distilled from the craft (and the bugs) of making that deck real.
 - ⌨️ **Presenter-grade navigation** — arrows/space, overview mode, clickable progress rail
   with tooltips, `#s5` deep links for rehearsal, plus a ready pattern for auto-playing
   reels the presenter can take over (they stop at the end — they never loop over you).
+- ✏️ **Edit mode, for humans** — serve the deck with `components/edit/serve.mjs` and add
+  `?edit=1`. Edit text in place, pin comments for the agent, apply or decline its proposed
+  changes, drag stations into a new order. All of it is written back to the HTML and to one
+  sidecar JSON file the agent reads. Off by default, and never on during a presentation.
 - 🪤 **The traps, pre-stepped-on** — mid-word line breaks, final-state flashes,
   reduced-motion killing the show, iframe `100vh` ballooning… eleven of them, documented,
   with the fixes baked in.

@@ -195,3 +195,14 @@ python -m http.server 8000 --bind 127.0.0.1   # then open /deck/index.html
 
 Rehearse with deep links (`#s7`). The presenter's pocket guide: arrows advance, `O` shows
 the map, dots jump.
+
+## Control-layer hooks: `window.Deckadence`
+
+The template exposes one object for layers that sit on top of the deck. Edit mode
+(`references/edit.md`) is the first. It carries the camera, the stations, `goto`, the reveal
+helpers (`splitLines`, `fitHeading`, `releaseClips`, `revealStation`), `isPresenting()` and
+`setInset(px)`, which shrinks the stage by a left inset (for a sidebar) and refits. A layer asks
+the engine through this object. It never re-implements the camera or the reveal. **Keep it when
+you restyle or rebuild the HUD**: without it the deck still presents, but it cannot be edited.
+The keydown handler also ignores keys aimed at text fields and editable elements, so typing
+never navigates.

@@ -105,6 +105,12 @@ const missing = chrome.filter(([, test]) => !test());
 missing.forEach(([, , why]) => bad('device chrome:', why));
 if (!missing.length) ok('device chrome intact (full screen, swipe, mask, culling, rail window, phone CSS)');
 
+/* ---------- control-layer hooks (edit mode) ----------
+ * Not a failure: a deck without window.Deckadence still presents. It just cannot be edited
+ * in the browser (components/edit/, references/edit.md). */
+if (/window\.Deckadence\s*=/.test(js)) ok('edit-mode hooks present (window.Deckadence)');
+else console.log('  note: no window.Deckadence — edit mode (components/edit/serve.mjs) cannot drive this deck');
+
 /* ---------- classes used but never styled ---------- */
 const styled = new Set();
 for (const m of markup.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g))

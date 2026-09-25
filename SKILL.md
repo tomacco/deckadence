@@ -66,6 +66,16 @@ can NOT tell you: `references/pitfalls.md`.
 Tell the user: arrows/Space navigate, `O` = overview, `F` = full screen, dots jump, `#sN`
 deep-links, swipe on phones/iPads, and to **vendor anime.js locally before show day**.
 
+### 6 · Review loop (edit mode)
+
+For the human to change the deck themselves, serve it with `node components/edit/serve.mjs
+deck/index.html` and send them the `?edit=1` link. They edit text in place, pin comments,
+and drag stations into a new order. All of it lands in the HTML and in
+`deck/index.review.json`. **At the start of every turn while a review is open, run
+`node components/edit/review.mjs deck/index.html`**, act on it, and answer each comment with a
+reply (attach a `patch` so their Apply button makes the change). Full loop:
+`references/edit.md`. Keep `window.Deckadence` when you restyle the engine; edit mode needs it.
+
 ## Hard rules (each one earned the hard way)
 
 1. **Every station gets a transition** — even subtle. Never a bare cut.
@@ -101,6 +111,7 @@ deep-links, swipe on phones/iPads, and to **vendor anime.js locally before show 
 | `references/motion.md` | building reveals, bespoke scenes, reels, timing |
 | `references/svg.md` | any diagram, flourish, node graph, or icon moment |
 | `references/pitfalls.md` | before declaring done; debugging weirdness; verification |
+| `references/edit.md` | the human wants to edit, comment on or reorder a deck in the browser; answering their comments |
 | `components/README.md` | the splice contract, if a component's own header is not enough |
 
 ## Components (copy-me code, not prose — splice into the single file)
@@ -115,3 +126,5 @@ Each file's header carries its own WHAT / SPLICE / NEEDS / WIRE. Read the one yo
 | `components/addons/fly-through-overview.js` | one station should arrive via the map |
 | `components/addons/site-iframe.js` | a station IS a real website, scrolled live |
 | `components/svg/iso-box.js` | an isometric scene of PHYSICAL space (factory, building, line) |
+| `components/edit/serve.mjs` | the human wants to edit the deck themselves: serves it with edit mode (`?edit=1`) |
+| `components/edit/review.mjs` | read the human's comments, edits and decisions from the sidecar; reply with proposals |
