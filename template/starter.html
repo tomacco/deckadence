@@ -347,11 +347,14 @@
   const cam = { x: stations[0].cx, y: stations[0].cy, zoom: 1 };
   let cur = 0, busy = false, overview = false, navToken = 0;
 
-  function vw() { return window.innerWidth; }
+  // The stage is the window minus a LEFT inset that a control layer may claim (edit mode's
+  // slide navigator). 0 unless something sets it through Deckadence.setInset().
+  let insetLeft = 0;
+  function vw() { return window.innerWidth - insetLeft; }
   function vh() { return window.innerHeight; }
   function render() {
     world.style.transform =
-      `translate(${vw() / 2 - cam.x * cam.zoom}px, ${vh() / 2 - cam.y * cam.zoom}px) scale(${cam.zoom})`;
+      `translate(${insetLeft + vw() / 2 - cam.x * cam.zoom}px, ${vh() / 2 - cam.y * cam.zoom}px) scale(${cam.zoom})`;
   }
   // Fit the 16:9 frame to the viewport — type reads edge-to-edge ("big fonts"
   // comes from fitting the frame, not from raising font sizes).
@@ -360,7 +363,7 @@
   function maskToStation(s) {
     const z = fitZoom(s);
     const l = Math.max(0, (vw() - s.w * z) / 2).toFixed(1), t = Math.max(0, (vh() - s.h * z) / 2).toFixed(1);
-    viewportEl.style.clipPath = `inset(${t}px ${l}px ${t}px ${l}px)`;
+    viewportEl.style.clipPath = `inset(${t}px ${l}px ${t}px ${(+l + insetLeft).toFixed(1)}px)`;
   }
   function unmask() { viewportEl.style.clipPath = 'inset(0px 0px 0px 0px)'; }
   // Phone survival: mobile Safari kills the tab under GPU/memory pressure — dozens of
@@ -673,6 +676,9 @@
   }
 
   window.addEventListener('keydown', e => {
+    // Typing is not navigating: a caret in a text field or an editable heading owns its keys
+    // (edit mode — components/edit/ — makes station text contenteditable).
+    if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""]')) return;
     if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); step(1); }
     else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); step(-1); }
     else if (e.key === 'o' || e.key === 'O' || e.key === 'ArrowUp') { e.preventDefault(); if (!busy) toOverview(); }
@@ -730,12 +736,26 @@
   // click a station while in overview to fly to it
   stations.forEach((s, i) => s.el.addEventListener('click', () => { if (overview && !busy) goto(i); }));
 
-  window.addEventListener('resize', () => {
+  function refit() {
     stations.forEach(s => { s.w = s.el.offsetWidth; s.h = s.el.offsetHeight; s.cx = s.x + s.w / 2; s.cy = s.y + s.h / 2; });
     railWindow(cur);
     if (overview) toOverview();
     else { const s = stations[cur]; cam.x = s.cx; cam.y = s.cy; cam.zoom = fitZoom(s); render(); maskToStation(s); }
-  });
+  }
+  window.addEventListener('resize', refit);
+
+  /* ---------- control-layer hooks ----------
+     The ONE surface an outside layer (edit mode: components/edit/) may use. The engine stays
+     the owner of the camera and the reveal; a layer asks through here and never re-implements
+     either. Read-only view of the stations: order is DOM order, ids are the stable address. */
+  window.Deckadence = {
+    version: 1,
+    cam, stations, world, viewport: viewportEl,
+    current: () => cur, isBusy: () => busy, isOverview: () => overview, still: STILL,
+    goto, toOverview, render, fitZoom, revealStation, splitLines, fitHeading, releaseClips,
+    setInset(px) { insetLeft = Math.max(0, +px || 0); refit(); },
+    isPresenting: () => !!(document.fullscreenElement || document.webkitFullscreenElement),
+  };
 
   /* ---------- boot (supports #s3 deep links for rehearsal) ---------- */
   const hashIdx = stations.findIndex(s => '#' + s.el.id === location.hash);
