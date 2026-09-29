@@ -164,7 +164,7 @@ use HTTP. It writes the sidecar directly under the shared lock.
 
 The template exposes one surface for control layers:
 `cam`, `stations`, `world`, `viewport`, `current()`, `isBusy()`, `isOverview()`, `still`, `goto(i)`,
-`toOverview()`, `render()`, `fitZoom(s)`, `revealStation(s)`, `splitLines(el)`, `fitHeading(el)`,
+`toOverview()`, `render()`, `fitZoom(s)`, `primeStation(s)`, `revealStation(s)`, `splitLines(el)`, `fitHeading(el)`,
 `releaseClips(el)`, `setInset(px)` (the stage becomes the window minus a left inset) and
 `isPresenting()`. The engine's keydown handler also ignores keys aimed at a text field or an
 editable element, so typing a space never advances the deck.

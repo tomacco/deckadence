@@ -685,6 +685,8 @@
     // spends its opening beats playing to a camera that is still travelling — and on a
     // `dive` that is 1.75s of choreography the audience watches from across the plane.
     // Guarded by a nav token so an interrupted fly never reveals over another station.
+    // PRIME NOW, reveal on arrival: the destination is hidden before the camera shows it.
+    primeStation(s);
     const reveal = () => { if (fresh()) revealStation(s); };
     const mid = () => { if (fresh()) setTone(i); };
     // Same-station replay (Esc/↓): no flight to wait for, so reveal at once. Scenes were
@@ -724,10 +726,9 @@
   // Release the clip masks once lines land, so descenders are never cropped.
   function releaseClips(el) { el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'visible'; }); }
 
-  function playIntro(s, isNew) {
-    if (!isNew) return;
-    const el = s.el;
-    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });  // re-mask for replays
+  // What the generic intro animates: heading LINES (split + fitted once) and data-fade elements
+  // (or, on a station with neither, its non-absolute children).
+  function introTargets(el) {
     el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
     el.querySelectorAll('[data-split="lines"]').forEach(fitHeading);
     const lines = el.querySelectorAll('.lineInner');
@@ -736,16 +737,25 @@
     if (!lines.length && !fades.length) {
       autos = Array.from(el.children).filter(c => getComputedStyle(c).position !== 'absolute');
     }
-    const fadeTargets = [...fades, ...autos];
+    return { lines, fadeTargets: [...fades, ...autos] };
+  }
+  // PRIME = the initial (hidden) state. Runs at DEPARTURE via primeStation(), never on arrival.
+  function primeIntro(el) {
+    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });  // re-mask for replays
+    const { lines, fadeTargets } = introTargets(el);
+    // guard empty lists — anime warns on no targets
+    if (lines.length) utils.set(lines, { translateY: '100%' });
+    if (fadeTargets.length) utils.set(fadeTargets, { opacity: 0, translateY: 22 });
+  }
+  // PLAY = animate from the primed state. Never sets an initial state itself.
+  function playIntro(el) {
+    const { lines, fadeTargets } = introTargets(el);
     if (STILL) {                     // flat final frame: what a screenshot must show
       releaseClips(el);
       if (lines.length) utils.set(lines, { translateY: '0%' });
       if (fadeTargets.length) utils.set(fadeTargets, { opacity: 1, translateY: 0 });
       return;
     }
-    // initial state BEFORE visible (guard empty lists — anime warns on no targets)
-    if (lines.length) utils.set(lines, { translateY: '100%' });
-    if (fadeTargets.length) utils.set(fadeTargets, { opacity: 0, translateY: 22 });
     if (lines.length) animate(lines, { translateY: ['100%', '0%'], duration: 1150 * MOTION,
       delay: anime.stagger(150 * MOTION), ease: EASE, onComplete: () => releaseClips(el) });
     else releaseClips(el);
@@ -761,15 +771,36 @@
   // scene's CSS rest state is hidden — e.g. paths pre-set to a full dashoffset).
   function revealStation(s) {
     const name = s.el.dataset.scene, sc = name && sceneRegistry[name];
-    if (STILL) { if (sc && sc.still) sc.still(s.el); playIntro(s, true); return; }
+    if (STILL) { if (sc && sc.still) sc.still(s.el); playIntro(s.el); return; }
+    // Safety net: a path that reveals without priming (a custom fly, an addon) still animates,
+    // but it flashes: that is a bug in the caller, so say so. components/verify/flash.mjs finds it.
+    if (!s.primed) { console.warn('[deckadence] station revealed without priming (it will flash):', s.key || s.el.id); primeStation(s); }
+    s.primed = false;
     if (sc) { sc.run(s.el); return; }
-    playIntro(s, true);
+    playIntro(s.el);
+  }
+  // PRIME a station: put everything its reveal will animate into the INITIAL state. goto() calls
+  // this at DEPARTURE, while the destination is still masked off-screen, so the flight shows the
+  // station EMPTY and the reveal on arrival only ever ADDS. Priming on arrival (inside run() or
+  // the intro) is the final-state flash: the flight shows the finished station, arrival hides it,
+  // then it animates back in (pitfalls.md trap 2). A scene primes through its prep(el).
+  function primeStation(s) {
+    s.primed = true;
+    if (STILL) return;
+    const name = s.el.dataset.scene, sc = name && sceneRegistry[name];
+    if (!sc) { primeIntro(s.el); return; }
+    if (sc.prep) sc.prep(s.el);
+    else console.warn('[deckadence] scene "' + name + '" has no prep(el): it will flash on every arrival');
   }
 
   /* ---------- scenes (landing) ----------
-     The scene-controller pattern: a plain object {cancelled, timers, anims}; stop() FREEZES
-     everything (never disposes); an async IIFE sequences beats with await, checking
-     scene.cancelled after every wait. Initial state is set BEFORE anything is visible. */
+     Every scene is { prep, run, stop, still }:
+       prep(el)  the INITIAL state of everything the scene animates. The engine calls it at
+                 DEPARTURE (primeStation), while the station is still off-screen, so the flight
+                 shows it empty. Never reset inside play: that is the final-state flash.
+       play      runs on arrival, from the primed state; an async IIFE sequences beats with
+                 await, checking scene.cancelled after every wait.
+       stop()    FREEZES (never disposes).   still(el)  the final frame for ?still=1 shots. */
   const wait = (scene, ms) => new Promise(res => scene.timers.push(setTimeout(res, ms * MOTION)));
   function drawPaths(scene, paths, dur, baseDelay = 0, step = 0) {
     paths.forEach((p, i) => {
@@ -781,10 +812,9 @@
     });
   }
   function hidePaths(paths) { paths.forEach(p => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; }); }
-  function showPaths(paths) { paths.forEach(p => { p.style.strokeDasharray = ''; p.style.strokeDashoffset = ''; }); }
-  // One registry entry, with the stop/cancel bookkeeping shared. Assigned as
-  // one sceneRegistry.<key> assignment per scene, so check.mjs can see every registration.
-  function scene(play, still) {
+  // One registry entry, with the stop/cancel bookkeeping shared. Assigned as one
+  // sceneRegistry.<key> per scene, so check.mjs can see every registration and its prep.
+  function scene({ prep, play, still }) {
     let live = null;
     const entry = {
       stop() {
@@ -793,6 +823,7 @@
         live.anims.forEach(a => { try { a.pause(); } catch (e) {} });
         live = null;
       },
+      prep,
       run(el) {
         entry.stop();
         const scene = { cancelled: false, timers: [], anims: [] };
@@ -803,183 +834,221 @@
     };
     return entry;
   }
-  // Heading lines: masked, split, fitted, parked below their mask. Returns the line spans.
-  function prepLines(el) {
-    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });
+  // Heading lines: split + fitted once. prepLines also masks them and parks them below the mask.
+  function lineSpans(el) {
     el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
     el.querySelectorAll('[data-split="lines"]').forEach(fitHeading);
-    const lines = el.querySelectorAll('.lineInner');
-    utils.set(lines, { translateY: '100%' });
-    return lines;
+    return el.querySelectorAll('.lineInner');
   }
-  const rise = (A, el, lines, dur = 1150) => A(lines, { translateY: ['100%', '0%'], duration: dur * MOTION,
+  function prepLines(el) {
+    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });
+    utils.set(lineSpans(el), { translateY: '100%' });
+  }
+  const rise = (A, el, dur = 1150) => A(lineSpans(el), { translateY: ['100%', '0%'], duration: dur * MOTION,
     delay: anime.stagger(150 * MOTION), ease: EASE, onComplete: () => releaseClips(el) });
   const fadeIn = (A, t, dur = 800, delay = 0, to = 1) => A(t, { opacity: [0, to], translateY: [18, 0],
     duration: dur * MOTION, delay: delay * MOTION, ease: 'out(2)' });
   const hide = (...ts) => ts.forEach(t => t && utils.set(t, { opacity: 0 }));
 
   /* OCHRE: the name rises, and only then the full stop lands. The stop is the red dot. */
-  sceneRegistry.title = scene((el, scene, A) => {
-    const lines = prepLines(el), q = s => el.querySelector(s);
-    const stop = q('.stop'), eyebrow = q('.eyebrow'), motto = q('.motto'), hint = q('.keyhint'), label = q('.label');
-    hide(eyebrow, motto, hint, label); utils.set(stop, { scale: 0 });
-    (async () => {
-      fadeIn(A, eyebrow, 700, 0, .6);
-      rise(A, el, lines, 1300);
-      await wait(scene, 1250); if (scene.cancelled) return;
-      A(stop, { scale: [0, 1.25, 1], duration: 620 * MOTION, ease: 'out(3)' });
-      await wait(scene, 700); if (scene.cancelled) return;
-      fadeIn(A, motto, 1100);
-      await wait(scene, 900); if (scene.cancelled) return;
-      fadeIn(A, label, 900); fadeIn(A, hint, 900, 250);
-    })();
+  sceneRegistry.title = scene({
+    prep(el) {
+      const q = s => el.querySelector(s);
+      prepLines(el);
+      hide(q('.eyebrow'), q('.motto'), q('.keyhint'), q('.label'));
+      utils.set(q('.stop'), { scale: 0 });
+    },
+    play(el, scene, A) {
+      const q = s => el.querySelector(s);
+      (async () => {
+        fadeIn(A, q('.eyebrow'), 700, 0, .6);
+        rise(A, el, 1300);
+        await wait(scene, 1250); if (scene.cancelled) return;
+        A(q('.stop'), { scale: [0, 1.25, 1], duration: 620 * MOTION, ease: 'out(3)' });
+        await wait(scene, 700); if (scene.cancelled) return;
+        fadeIn(A, q('.motto'), 1100);
+        await wait(scene, 900); if (scene.cancelled) return;
+        fadeIn(A, q('.label'), 900); fadeIn(A, q('.keyhint'), 900, 250);
+      })();
+    }
   });
 
-  /* SIENNA: the camera path draws itself; the red dot walks it, and each frame is drawn as
-     the dot reaches it. The dot stays on the last frame. */
+  /* SIENNA: the camera path draws itself; a red dot walks it, and each frame is drawn as the
+     dot reaches it. The dot stays on the last frame. */
   const STUDY_STOPS = [0, 0.5, 1];
-  sceneRegistry.study = scene((el, scene, A) => {
-    const lines = prepLines(el), q = s => [...el.querySelectorAll(s)];
-    const eyebrow = el.querySelector('.eyebrow'), label = el.querySelector('.label');
-    const frames = q('.fr'), path = el.querySelector('.campath'), dot = el.querySelector('.walker');
-    const L = path.getTotalLength();
-    hide(eyebrow, label, dot);
-    frames.forEach(f => { hidePaths([...f.querySelectorAll('rect, line')]); });
-    path.style.strokeDasharray = L; path.style.strokeDashoffset = L;
-    const p0 = path.getPointAtLength(0); dot.setAttribute('cx', p0.x); dot.setAttribute('cy', p0.y);
-    const drawFrame = f => {
-      const parts = [...f.querySelectorAll('rect, line')];
-      drawPaths(scene, parts.slice(0, 1), 700);
-      drawPaths(scene, parts.slice(1), 420, 450, 110);
-    };
-    (async () => {
-      fadeIn(A, eyebrow, 600, 0, .6);
-      rise(A, el, lines, 1100);
-      await wait(scene, 950); if (scene.cancelled) return;
-      drawFrame(frames[0]);
-      await wait(scene, 800); if (scene.cancelled) return;
-      A(dot, { opacity: [0, 1], scale: [0, 1], duration: 400 * MOTION, ease: 'out(3)' });
-      await wait(scene, 300); if (scene.cancelled) return;
-      const prog = { t: 0 }; let next = 1;
-      A(prog, { t: [0, 1], duration: 2600 * MOTION, ease: 'inOutSine', onUpdate: () => {
-        const pt = path.getPointAtLength(L * prog.t);
-        dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y);
-        path.style.strokeDashoffset = L * (1 - prog.t);
-        if (next < frames.length && prog.t >= STUDY_STOPS[next] - 0.04) drawFrame(frames[next++]);
-      } });
-      await wait(scene, 2700); if (scene.cancelled) return;
-      fadeIn(A, label, 900);
-    })();
-  }, el => {
-    const path = el.querySelector('.campath'), dot = el.querySelector('.walker');
-    const end = path.getPointAtLength(path.getTotalLength());
-    dot.setAttribute('cx', end.x); dot.setAttribute('cy', end.y);
+  sceneRegistry.study = scene({
+    prep(el) {
+      prepLines(el);
+      hide(el.querySelector('.eyebrow'), el.querySelector('.label'), el.querySelector('.walker'));
+      el.querySelectorAll('.fr').forEach(f => hidePaths([...f.querySelectorAll('rect, line')]));
+      hidePaths([el.querySelector('.campath')]);
+      const path = el.querySelector('.campath'), p0 = path.getPointAtLength(0), dot = el.querySelector('.walker');
+      dot.setAttribute('cx', p0.x); dot.setAttribute('cy', p0.y);
+    },
+    play(el, scene, A) {
+      const frames = [...el.querySelectorAll('.fr')], path = el.querySelector('.campath'), dot = el.querySelector('.walker');
+      const L = path.getTotalLength();
+      const drawFrame = f => {
+        const parts = [...f.querySelectorAll('rect, line')];
+        drawPaths(scene, parts.slice(0, 1), 700);
+        drawPaths(scene, parts.slice(1), 420, 450, 110);
+      };
+      (async () => {
+        fadeIn(A, el.querySelector('.eyebrow'), 600, 0, .6);
+        rise(A, el, 1100);
+        await wait(scene, 950); if (scene.cancelled) return;
+        drawFrame(frames[0]);
+        await wait(scene, 800); if (scene.cancelled) return;
+        A(dot, { opacity: [0, 1], scale: [0, 1], duration: 400 * MOTION, ease: 'out(3)' });
+        await wait(scene, 300); if (scene.cancelled) return;
+        const prog = { t: 0 }; let next = 1;
+        A(prog, { t: [0, 1], duration: 2600 * MOTION, ease: 'inOutSine', onUpdate: () => {
+          const pt = path.getPointAtLength(L * prog.t);
+          dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y);
+          path.style.strokeDashoffset = L * (1 - prog.t);
+          if (next < frames.length && prog.t >= STUDY_STOPS[next] - 0.04) drawFrame(frames[next++]);
+        } });
+        await wait(scene, 2700); if (scene.cancelled) return;
+        fadeIn(A, el.querySelector('.label'), 900);
+      })();
+    },
+    still(el) {
+      const path = el.querySelector('.campath'), dot = el.querySelector('.walker');
+      const end = path.getPointAtLength(path.getTotalLength());
+      dot.setAttribute('cx', end.x); dot.setAttribute('cy', end.y);
+    }
   });
 
   /* IVORY: seven small works go up on the wall one by one; the red dot lands on this one. */
-  sceneRegistry.works = scene((el, scene, A) => {
-    const lines = prepLines(el);
-    const eyebrow = el.querySelector('.eyebrow'), works = [...el.querySelectorAll('.work')];
-    const dot = el.querySelector('.work .rd');
-    hide(eyebrow); utils.set(works, { opacity: 0, translateY: 30 }); utils.set(dot, { scale: 0 });
-    (async () => {
-      fadeIn(A, eyebrow, 600, 0, .6);
-      rise(A, el, lines);
-      await wait(scene, 850); if (scene.cancelled) return;
-      A(works, { opacity: [0, 1], translateY: [30, 0], duration: 800 * MOTION,
-                 delay: anime.stagger(140 * MOTION), ease: 'out(3)' });
-      await wait(scene, 140 * works.length + 900); if (scene.cancelled) return;
-      A(dot, { scale: [0, 1.3, 1], duration: 600 * MOTION, ease: 'out(3)' });
-    })();
+  sceneRegistry.works = scene({
+    prep(el) {
+      prepLines(el);
+      hide(el.querySelector('.eyebrow'));
+      utils.set(el.querySelectorAll('.work'), { opacity: 0, translateY: 30 });
+      utils.set(el.querySelector('.work .rd'), { scale: 0 });
+    },
+    play(el, scene, A) {
+      const works = [...el.querySelectorAll('.work')];
+      (async () => {
+        fadeIn(A, el.querySelector('.eyebrow'), 600, 0, .6);
+        rise(A, el);
+        await wait(scene, 850); if (scene.cancelled) return;
+        A(works, { opacity: [0, 1], translateY: [30, 0], duration: 800 * MOTION,
+                   delay: anime.stagger(140 * MOTION), ease: 'out(3)' });
+        await wait(scene, 140 * works.length + 900); if (scene.cancelled) return;
+        A(el.querySelector('.work .rd'), { scale: [0, 1.3, 1], duration: 600 * MOTION, ease: 'out(3)' });
+      })();
+    }
   });
 
   /* CARMINE: a note is pinned, the soft words are selected, and replaced. */
   const EDIT_FROM = 'pretty good', EDIT_TO = 'ready';
-  sceneRegistry.edit = scene((el, scene, A) => {
-    const lines = prepLines(el), q = s => el.querySelector(s);
-    const eyebrow = q('.eyebrow'), demo = q('.sheet'), word = q('.demo .word'), caret = q('.demo .caret');
-    const note = q('.note'), state = q('.note .state'), lead = q('.lead');
-    word.textContent = EDIT_FROM; word.classList.remove('sel'); caret.classList.remove('on');
-    state.textContent = 'Open';
-    hide(eyebrow, demo, note, lead);
-    (async () => {
-      fadeIn(A, eyebrow, 600, 0, .6);
-      rise(A, el, lines);
-      await wait(scene, 800); if (scene.cancelled) return;
-      fadeIn(A, demo, 900); fadeIn(A, lead, 900, 300);
-      await wait(scene, 1100); if (scene.cancelled) return;
-      fadeIn(A, note, 700);
-      await wait(scene, 1300); if (scene.cancelled) return;
-      word.classList.add('sel');
-      await wait(scene, 700); if (scene.cancelled) return;
-      word.classList.remove('sel'); word.textContent = ''; caret.classList.add('on');
-      for (let i = 1; i <= EDIT_TO.length; i++) {
-        await wait(scene, 110); if (scene.cancelled) return;
-        word.textContent = EDIT_TO.slice(0, i);
-      }
-      await wait(scene, 500); if (scene.cancelled) return;
-      state.textContent = 'Applied';
-      await wait(scene, 1200); if (scene.cancelled) return;
-      caret.classList.remove('on');
-    })();
-  }, el => {
-    el.querySelector('.demo .word').textContent = EDIT_TO;
-    el.querySelector('.note .state').textContent = 'Applied';
+  sceneRegistry.edit = scene({
+    prep(el) {
+      const q = s => el.querySelector(s);
+      prepLines(el);
+      const word = q('.demo .word');
+      word.textContent = EDIT_FROM; word.classList.remove('sel'); q('.demo .caret').classList.remove('on');
+      q('.note .state').textContent = 'Open';
+      hide(q('.eyebrow'), q('.sheet'), q('.note'), q('.lead'));
+    },
+    play(el, scene, A) {
+      const q = s => el.querySelector(s);
+      const word = q('.demo .word'), caret = q('.demo .caret'), state = q('.note .state');
+      (async () => {
+        fadeIn(A, q('.eyebrow'), 600, 0, .6);
+        rise(A, el);
+        await wait(scene, 800); if (scene.cancelled) return;
+        fadeIn(A, q('.sheet'), 900); fadeIn(A, q('.lead'), 900, 300);
+        await wait(scene, 1100); if (scene.cancelled) return;
+        fadeIn(A, q('.note'), 700);
+        await wait(scene, 1300); if (scene.cancelled) return;
+        word.classList.add('sel');
+        await wait(scene, 700); if (scene.cancelled) return;
+        word.classList.remove('sel'); word.textContent = ''; caret.classList.add('on');
+        for (let i = 1; i <= EDIT_TO.length; i++) {
+          await wait(scene, 110); if (scene.cancelled) return;
+          word.textContent = EDIT_TO.slice(0, i);
+        }
+        await wait(scene, 500); if (scene.cancelled) return;
+        state.textContent = 'Applied';
+        await wait(scene, 1200); if (scene.cancelled) return;
+        caret.classList.remove('on');
+      })();
+    },
+    still(el) {
+      el.querySelector('.demo .word').textContent = EDIT_TO;
+      el.querySelector('.note .state').textContent = 'Applied';
+    }
   });
 
   /* VERDIGRIS: the phone arrives upright and turns to landscape, the way readers do. */
-  sceneRegistry.phone = scene((el, scene, A) => {
-    const lines = prepLines(el), q = s => el.querySelector(s);
-    const eyebrow = q('.eyebrow'), lead = q('.lead'), phone = q('.phone');
-    hide(eyebrow, lead); utils.set(phone, { opacity: 0, rotate: 90, scale: .8 });
-    (async () => {
-      fadeIn(A, eyebrow, 600, 0, .6);
-      rise(A, el, lines);
-      await wait(scene, 600); if (scene.cancelled) return;
-      fadeIn(A, lead, 900);
-      A(phone, { opacity: [0, 1], scale: [.8, .8], duration: 600 * MOTION, ease: 'out(2)' });
-      await wait(scene, 1000); if (scene.cancelled) return;
-      A(phone, { rotate: [90, 0], scale: [.8, 1], duration: 1300 * MOTION, ease: EASE });
-    })();
+  sceneRegistry.phone = scene({
+    prep(el) {
+      prepLines(el);
+      hide(el.querySelector('.eyebrow'), el.querySelector('.lead'));
+      utils.set(el.querySelector('.phone'), { opacity: 0, rotate: 90, scale: .8 });
+    },
+    play(el, scene, A) {
+      const phone = el.querySelector('.phone');
+      (async () => {
+        fadeIn(A, el.querySelector('.eyebrow'), 600, 0, .6);
+        rise(A, el);
+        await wait(scene, 600); if (scene.cancelled) return;
+        fadeIn(A, el.querySelector('.lead'), 900);
+        A(phone, { opacity: [0, 1], duration: 600 * MOTION, ease: 'out(2)' });
+        await wait(scene, 1000); if (scene.cancelled) return;
+        A(phone, { rotate: [90, 0], scale: [.8, 1], duration: 1300 * MOTION, ease: EASE });
+      })();
+    }
   });
 
   /* INDIGO: the command types itself. */
   const CMD = 'git clone https://github.com/tomacco/deckadence ~/.claude/skills/deckadence';
-  sceneRegistry.install = scene((el, scene, A) => {
-    const lines = prepLines(el), q = s => el.querySelector(s);
-    const eyebrow = q('.eyebrow'), term = q('.term'), typed = q('.typed'), after = q('.after');
-    typed.textContent = '';
-    hide(eyebrow, term, after);
-    (async () => {
-      fadeIn(A, eyebrow, 600, 0, .6);
-      rise(A, el, lines);
-      await wait(scene, 700); if (scene.cancelled) return;
-      fadeIn(A, term, 800);
-      await wait(scene, 800); if (scene.cancelled) return;
-      for (let i = 1; i <= CMD.length; i++) {
-        if (scene.cancelled) return;
-        typed.textContent = CMD.slice(0, i);
-        await wait(scene, 20 + (CMD[i - 1] === ' ' ? 60 : 0));
-      }
-      await wait(scene, 450); if (scene.cancelled) return;
-      fadeIn(A, after, 900);
-    })();
-  }, el => { el.querySelector('.typed').textContent = CMD; });
+  sceneRegistry.install = scene({
+    prep(el) {
+      prepLines(el);
+      el.querySelector('.typed').textContent = '';
+      hide(el.querySelector('.eyebrow'), el.querySelector('.term'), el.querySelector('.after'));
+    },
+    play(el, scene, A) {
+      const typed = el.querySelector('.typed');
+      (async () => {
+        fadeIn(A, el.querySelector('.eyebrow'), 600, 0, .6);
+        rise(A, el);
+        await wait(scene, 700); if (scene.cancelled) return;
+        fadeIn(A, el.querySelector('.term'), 800);
+        await wait(scene, 800); if (scene.cancelled) return;
+        for (let i = 1; i <= CMD.length; i++) {
+          if (scene.cancelled) return;
+          typed.textContent = CMD.slice(0, i);
+          await wait(scene, 20 + (CMD[i - 1] === ' ' ? 60 : 0));
+        }
+        await wait(scene, 450); if (scene.cancelled) return;
+        fadeIn(A, el.querySelector('.after'), 900);
+      })();
+    },
+    still(el) { el.querySelector('.typed').textContent = CMD; }
+  });
 
   /* VERMILION: the closing line, then the wall label, and last of all the red dot is pressed on. */
-  sceneRegistry.finale = scene((el, scene, A) => {
-    const lines = prepLines(el), q = s => el.querySelector(s);
-    const credits = q('.credits'), label = q('.label'), dot = q('.label .rd');
-    hide(credits, label); utils.set(dot, { scale: 0 });
-    (async () => {
-      rise(A, el, lines, 1400);
-      await wait(scene, 1500); if (scene.cancelled) return;
-      fadeIn(A, label, 1000);
-      await wait(scene, 1400); if (scene.cancelled) return;
-      A(dot, { scale: [0, 1.5, 1], duration: 700 * MOTION, ease: 'out(3)' });
-      await wait(scene, 900); if (scene.cancelled) return;
-      fadeIn(A, credits, 1000);
-    })();
+  sceneRegistry.finale = scene({
+    prep(el) {
+      prepLines(el);
+      hide(el.querySelector('.credits'), el.querySelector('.label'));
+      utils.set(el.querySelector('.label .rd'), { scale: 0 });
+    },
+    play(el, scene, A) {
+      (async () => {
+        rise(A, el, 1400);
+        await wait(scene, 1500); if (scene.cancelled) return;
+        fadeIn(A, el.querySelector('.label'), 1000);
+        await wait(scene, 1400); if (scene.cancelled) return;
+        A(el.querySelector('.label .rd'), { scale: [0, 1.5, 1], duration: 700 * MOTION, ease: 'out(3)' });
+        await wait(scene, 900); if (scene.cancelled) return;
+        fadeIn(A, el.querySelector('.credits'), 1000);
+      })();
+    }
   });
 
   /* ---------- input ---------- */
@@ -1102,7 +1171,7 @@
     version: 1,
     cam, stations, world, viewport: viewportEl,
     current: () => cur, isBusy: () => busy, isOverview: () => overview, still: STILL,
-    goto, toOverview, render, fitZoom, revealStation, splitLines, fitHeading, releaseClips,
+    goto, toOverview, render, fitZoom, primeStation, revealStation, splitLines, fitHeading, releaseClips,
     setInset(px) { insetLeft = Math.max(0, +px || 0); refit(); },
     isPresenting: () => !!(document.fullscreenElement || document.webkitFullscreenElement),
   };
@@ -1138,10 +1207,11 @@
   stations[start].el.style.visibility = 'hidden';
   Promise.all([document.fonts.ready, new Promise(r => setTimeout(r, 240))]).then(() => {
     const st = stations[start];
-    st.el.style.visibility = '';                       // same tick as the reset → no flash
     updateCulling();                                   // (touch: re-cull if the user moved on)
     railWindow(cur);                                   // web fonts can widen the counter
-    if (cur !== start) return;                         // user already navigated away
+    if (cur !== start) { st.el.style.visibility = ''; return; }   // user already navigated away
+    primeStation(st);                                  // initial state first...
+    st.el.style.visibility = '';                       // ...then visible, same tick → no flash
     revealStation(st);
   });
 })();

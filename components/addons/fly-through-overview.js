@@ -10,7 +10,9 @@
  *            }
  * WHY the callbacks: a custom fly MUST dispatch the reveal itself (`done`) or the station
  *          arrives dead, and MUST flip tone via `mid` while the map hides it.
- *          See references/pitfalls.md traps 13 and 14.
+ *          See references/pitfalls.md traps 13 and 14. goto() has already PRIMED the station
+ *          (primeStation) before any fly branch runs, so the map shows it empty and `done` only
+ *          adds; keep this branch below that line (trap 2).
  */
 function flyThroughOverview(s, { mid, done } = {}) {
   busy = true;

@@ -46,6 +46,14 @@ Navigation is just "tween the camera to the next station's center at its fitting
 > callback and from the boot deep-link path, so the two can never drift. Fired at t=0
 > instead, a scene plays its opening beats to a camera still in transit.
 
+> **…and is PRIMED at departure.** `primeStation(s)` puts everything the reveal will animate
+> into its initial state (the generic intro's `primeIntro`, or the scene's `prep(el)`).
+> `goto()` calls it before any fly branch, while the destination is still masked
+> off-screen, so the flight shows the station empty and arrival only adds. Boot primes the
+> start station in the same tick it becomes visible. Priming on arrival is the final-state
+> flash (`pitfalls.md` trap 2); `revealStation` logs a `[deckadence]` warning when it gets an
+> unprimed station, and `components/verify/flash.mjs` fails the deck.
+
 ## Timing hooks on a fly
 
 Both camera moves take `{ mid, done }`. `mid` fires ~55% through (state changes that must
@@ -55,7 +63,8 @@ tone and reveals immediately. A nav token guards both callbacks, so a fly the pr
 interrupts never reveals over another station.
 
 **If you add a custom fly, it MUST dispatch the reveal itself** (call `done`, or
-`revealStation(s)` in its `onComplete`). A custom fly that early-returns past the reveal
+`revealStation(s)` in its `onComplete`), and it must be a branch inside `goto()` BELOW the
+`primeStation(s)` line, so the station is primed before the camera moves. A custom fly that early-returns past the reveal
 leaves the station arriving dead — this is the single easiest way to break the engine.
 
 `?still=1` short-circuits both moves: the camera jumps, `mid`/`done` fire synchronously, and
@@ -268,9 +277,10 @@ the map, dots jump.
 
 The template exposes one object for layers that sit on top of the deck. Edit mode
 (`references/edit.md`) is the first. It carries the camera, the stations, `goto`, the reveal
-helpers (`splitLines`, `fitHeading`, `releaseClips`, `revealStation`), `isPresenting()` and
+helpers (`splitLines`, `fitHeading`, `releaseClips`, `primeStation`, `revealStation`), `isPresenting()` and
 `setInset(px)`, which shrinks the stage by a left inset (for a sidebar) and refits. A layer asks
-the engine through this object. It never re-implements the camera or the reveal. **Keep it when
+the engine through this object. It never re-implements the camera or the reveal. A layer
+that reveals a station itself calls `primeStation(s)` first, while the station is hidden. **Keep it when
 you restyle or rebuild the HUD**: without it the deck still presents, but it cannot be edited.
 The keydown handler also ignores keys aimed at text fields and editable elements, so typing
 never navigates.

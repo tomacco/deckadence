@@ -3,7 +3,7 @@
  *          first → reveals the payload; the next → moves on. Award winners, answers to a
  *          posed question, the number behind a claim.
  * SPLICE : into the engine <script>, next to the other scenes.
- * NEEDS  : sceneRegistry, stations, cur, animate, utils, MOTION, playIntro
+ * NEEDS  : sceneRegistry, stations, cur, animate, utils, MOTION, primeIntro, playIntro
  * MARKUP : <section class="station" id="s9" data-name="The answer" data-scene="reveal"
  *            data-x="…" data-y="…">
  *            <h2 class="display d-l" data-split="lines">The question</h2>
@@ -22,11 +22,17 @@
 sceneRegistry.reveal = {
   stop() { /* nothing to freeze: the reveal is a one-shot tween, not a loop */ },
 
-  run(el) {
+  // PREP: the engine calls this at DEPARTURE (primeStation), before the camera shows the
+  // station. Initial states go here, never in run(): hiding on arrival is the final-state flash.
+  prep(el) {
     const pay = el.querySelectorAll('.payload');
     el.dataset.shown = '';                       // re-arm on every arrival AND on replay
     if (pay.length) utils.set(pay, { opacity: 0, translateY: 26 });
-    playIntro({ el }, true);                     // the heading gets the normal line-rise
+    primeIntro(el);                              // the heading's lines, parked below their mask
+  },
+
+  run(el) {
+    playIntro(el);                               // the heading gets the normal line-rise
   },
 
   // ?still=1 must show the FULL station — a screenshot of beat 0 hides the payload's layout.

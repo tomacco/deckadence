@@ -47,6 +47,8 @@ from making that deck work on the night.
 - **Checks before you ship.** `components/verify/check.mjs` runs static gates on the file
   (layout staircase, keys, scene wiring, phone chrome). `components/verify/shoot.sh` takes a
   still screenshot of every slide, so Claude looks at the deck before calling it done.
+  `components/verify/flash.mjs` walks the deck in a real browser and fails if anything
+  appears finished, vanishes and animates in again as you arrive.
 - **Twenty-one traps already handled.** Words broken mid-line, a finished frame flashing
   before its animation, reduced-motion settings killing the show, iframes that balloon. Each
   one is written down in `references/pitfalls.md` with its fix built into the template.

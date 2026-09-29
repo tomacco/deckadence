@@ -8,10 +8,21 @@ Every trap here has actually bitten. Check this list before declaring a deck don
    inline-blocks — the browser will break lines between them ("sys/tem"). Split into LINES
    at `<br>` only (`splitLines`), then `fitHeading` shrinks the font until each line fits.
 
-2. **Final-state flash on reveal.** If an element becomes visible and THEN its animation
-   initializes, the end state flashes first. Apply initial state (`utils.set`, dashoffset
-   hiding) BEFORE the element/panel is revealed. Split scenes into reset (before visible)
-   and play (after).
+2. **Final-state flash on reveal.** The most-reported bug, and it came back more than once
+   because it looked like a per-scene mistake when it was an ENGINE one. The camera shows
+   the destination while it flies there; if the station's initial state (lines below their
+   mask, opacity 0, paths undrawn, typed text cleared) is applied on ARRIVAL, the audience
+   sees it finished for most of a second, then empty, then animating back in. Resetting
+   carefully inside `run()` cannot fix it: `run()` itself fires on arrival (trap 13).
+   **The fix is structural:** `goto()` calls `primeStation(s)` at DEPARTURE, while the
+   destination is still masked off-screen; it primes the generic intro (`primeIntro`) or
+   calls the scene's **`prep(el)`**, which holds EVERY initial state the scene animates
+   from. `run()` and `playIntro()` only play. Boot primes the start station in the same tick
+   it becomes visible. A reveal that arrives unprimed (a custom fly outside `goto()`) logs
+   `[deckadence] station revealed without priming`. Gates: `check.mjs` fails a missing
+   `primeStation` call or a scene without `prep`; `flash.mjs` walks the deck in a browser and
+   fails on any element seen visible, then hidden, during one visit (measured before this
+   fix: 10 of 10 visits flashed on the starter template, 14 of 14 on the landing).
 
 3. **Station `position` override.** A `.station` must stay `position:absolute`. A layout
    class setting `position:relative` sends content off-screen.
@@ -60,7 +71,8 @@ Every trap here has actually bitten. Check this list before declaring a deck don
     a 1750 ms `dive`, most of the choreography happens while the audience is watching from
     across the plane. The template reveals in the fly's `done` callback
     (`revealStation`); a same-station replay reveals immediately because there is no
-    flight to wait for. **Any custom fly you add must dispatch the reveal itself** or the
+    flight to wait for. Reveal on arrival, but PRIME at departure (trap 2): the two halves
+    are separate calls, and swapping either one brings a bug back. **Any custom fly you add must dispatch the reveal itself** or the
     station arrives dead.
 
 14. **State that flips mid-transition.** The letterbox bars paint the viewport background
@@ -161,6 +173,19 @@ browser by hand:
 - Shoot the **`DECK_SHOT=phone`** preset (844×390) as well: the letterbox mask, the windowed
   rail and the phone-size HUD only exist at that size, and a HUD that overflows a phone is
   invisible in a 1600×1000 shot. `ipad` (1180×820) for the 4:3 case.
+
+**Tier 1.5 — the flash probe (every deck, before done):**
+
+```bash
+node components/verify/flash.mjs deck/index.html
+```
+
+Walks every station forward then back in headless Chrome and samples the destination on
+every animation frame, from departure to 1.5 s after arrival. It fails when an element is
+seen visible (opacity, inside its line mask, stroke drawn, on screen) and later hidden in
+the same visit, when typed text is cleared, or when the engine logs a `[deckadence]` flash
+warning. Blinking elements (infinite CSS animations) are skipped. This is trap 2's
+detector: a still shot cannot show a transition, and a 100 ms interval sampler misses it.
 
 **Tier 2 — CDP for MOTION (only when the timing itself is the question):** still mode
 cannot verify choreography. Drive the browser over CDP (Node ≥ 22 has global
