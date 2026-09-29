@@ -58,6 +58,11 @@
   let card = null;               // { kind: 'thread'|'compose', id?, el, ghost? }
   let es = null, pendingReload = false, raf = 0;
   const byId = id => D.stations.find(s => s.el.id === id);
+  // A record's station: by data-key first (stable across reorders), then by id (old
+  // sidecars, keyless decks). Keys match case-insensitively, as #KEY deep links do.
+  const up = v => String(v || '').toUpperCase();
+  const stationOf = r => (r.stationKey && D.stations.find(s => s.key && up(s.key) === up(r.stationKey))) || byId(r.station) || null;
+  const label = s => s ? (s.key ? `${s.key} · ${s.name || s.el.id}` : s.name || s.el.id) : '';
 
   /* ---------- chrome ---------- */
   const frame = $('div', 'dk'); frame.id = 'dk-frame';
@@ -163,7 +168,7 @@
   function reloadHere() {
     persist();
     const s = D.stations[D.current()];
-    history.replaceState(null, '', location.pathname + location.search + '#' + s.el.id);
+    history.replaceState(null, '', location.pathname + location.search + '#' + encodeURIComponent(s.key || s.el.id));
     location.reload();
   }
 
@@ -239,7 +244,12 @@
       if (sib.length > 1) p += `:nth-of-type(${sib.indexOf(n) + 1})`;
       parts.unshift(p);
     }
-    return ['#' + CSS.escape(stEl.id), ...parts].join(' > ').replace(/^(#[^ ]+) > (#)/, '$2');
+    if (parts[0] && parts[0][0] === '#') return parts.join(' > ');     // an element id of its own
+    // Root on the station's data-key when it has one: ids are positional and a reorder may
+    // renumber them, the key never moves. Keyless decks fall back to the id.
+    const key = stEl.getAttribute('data-key');
+    const root = key ? `[data-key="${key.replace(/["\\]/g, '\\$&')}"]` : '#' + CSS.escape(stEl.id);
+    return [root, ...parts].join(' > ');
   }
 
   /* ---------- comments + pins ---------- */
@@ -252,7 +262,7 @@
   function pinPoint(c) {
     const a = anchorEl(c), off = c.anchor && c.anchor.offset;
     if (a && off) { const r = a.getBoundingClientRect(); if (r.width || r.height) return [r.left + off.x * r.width, r.top + off.y * r.height]; }
-    const s = byId(c.station); if (!s) return null;
+    const s = stationOf(c); if (!s) return null;
     const r = s.el.getBoundingClientRect();
     return [r.left + c.at.x / s.w * r.width, r.top + c.at.y / s.h * r.height];
   }
@@ -289,7 +299,7 @@
     const list = open.filter(needs).length ? open.filter(needs) : open;
     if (!list.length) { toast('No open comments'); return; }
     const k = card && card.id ? (list.findIndex(c => c.id === card.id) + 1) % list.length : 0;
-    const c = list[k], i = D.stations.findIndex(s => s.el.id === c.station);
+    const c = list[k], i = D.stations.indexOf(stationOf(c));
     if (i >= 0 && i !== D.current()) D.goto(i);
     setTimeout(() => openThread(c), i !== D.current() ? 0 : 0);
   }
@@ -309,12 +319,11 @@
     card = null;
     if (pendingReload && !editing) reloadHere();
   }
-  function stationName(id) { const s = byId(id); return s ? s.name || id : id; }
 
   function openCompose(s, local, anchor, x, y) {
     closeCard();
     const el = $('div', 'dk dk-card');
-    el.innerHTML = `<header><span class="dk-id">New comment</span><span class="dk-where">${esc(stationName(s.el.id))} · <span class="dk-mono">${esc(s.el.id)}</span></span><button class="dk-x" aria-label="Cancel">${IC.close}</button></header>
+    el.innerHTML = `<header><span class="dk-id">New comment</span><span class="dk-where">${esc(label(s))} · <span class="dk-mono">${esc(s.el.id)}</span></span><button class="dk-x" aria-label="Cancel">${IC.close}</button></header>
       ${anchor ? `<div class="dk-anchor">${esc(anchor.text || anchor.selector)}</div>` : ''}
       <div class="dk-compose"><textarea placeholder="Tell the agent what to change…" aria-label="Comment"></textarea>
       <div class="dk-row"><span class="dk-hint">Enter posts · Shift+Enter new line · Esc cancels</span><button class="dk-btn primary" data-post>Post</button></div></div>`;
@@ -328,7 +337,7 @@
     const post = async () => {
       const text = ta.value.trim(); if (!text) return ta.focus();
       el.querySelector('[data-post]').disabled = true; status('saving', 'Saving…');
-      const r = await api('comment', { station: s.el.id, at: local, anchor, text });
+      const r = await api('comment', { station: s.el.id, stationKey: s.key || null, at: local, anchor, text });
       if (!r.ok) { el.querySelector('[data-post]').disabled = false; status('error', 'Not saved'); return toast(r.error || 'Not saved', true); }
       status('saved', 'Saved'); closeCard();
       st.review.comments.push(r.comment); renderPins(); updateInbox();
@@ -371,7 +380,7 @@
     const prevPos = keep && card ? [card.el.style.left, card.el.style.top] : null;
     if (!keep || !card) closeCard(); else card.el.remove();
     const el = $('div', 'dk dk-card');
-    el.innerHTML = `<header><span class="dk-id">${esc(c.id)}</span><span class="dk-where">${esc(stationName(c.station))} · <span class="dk-mono">${esc(c.station)}</span>${c.resolved ? ' · resolved' : ''}</span><button class="dk-x" aria-label="Close">${IC.close}</button></header>
+    el.innerHTML = `<header><span class="dk-id">${esc(c.id)}</span><span class="dk-where">${esc(stationOf(c) ? label(stationOf(c)) : c.stationKey || c.station)} · <span class="dk-mono">${esc((stationOf(c) || { el: { id: c.station } }).el.id)}</span>${c.resolved ? ' · resolved' : ''}</span><button class="dk-x" aria-label="Close">${IC.close}</button></header>
       <div class="dk-scroll">${c.anchor && c.anchor.text ? `<div class="dk-anchor">${esc(c.anchor.text)}</div>` : ''}
       ${msgHTML(c, true)}${(c.replies || []).map(r => msgHTML(r)).join('')}</div>
       <div class="dk-compose"><textarea placeholder="Reply…" aria-label="Reply"></textarea>
@@ -432,7 +441,7 @@
     if (!st) return;
     const order = st.order;
     nav.querySelector('h2 span').textContent = String(order.length).padStart(2, '0');
-    const counts = {}; st.review.comments.forEach(c => { if (!c.resolved) counts[c.station] = (counts[c.station] || 0) + 1; });
+    const counts = {}; st.review.comments.forEach(c => { const s = stationOf(c), id = s ? s.el.id : c.station; if (!c.resolved) counts[id] = (counts[id] || 0) + 1; });
     if (soft && listEl.children.length === order.length && [...listEl.children].every((n, k) => n.dataset.id === order[k].id)) {
       [...listEl.children].forEach(n => { const b = n.querySelector('.dk-cc'), k = counts[n.dataset.id]; b.textContent = k || ''; b.style.display = k ? '' : 'none'; });
       return;
@@ -442,9 +451,9 @@
     io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { const f = e.target.querySelector('iframe'); if (!f.src) f.src = f.dataset.src; io.unobserve(e.target); } }), { root: listEl, rootMargin: '200px' });
     order.forEach((o, k) => {
       const n = $('div', 'dk-slide'); n.dataset.id = o.id; n.draggable = true; n.tabIndex = 0;
-      n.setAttribute('aria-label', `${k + 1}: ${o.name}`);
+      n.setAttribute('aria-label', `${k + 1}: ${o.key ? o.key + ' · ' : ''}${o.name}`);
       n.innerHTML = `<div class="dk-num">${String(k + 1).padStart(2, '0')}</div><div class="dk-thumb"><iframe tabindex="-1" loading="lazy" title="${esc(o.name)}"></iframe></div>
-        <div class="dk-meta"><span class="dk-name">${esc(o.name)}</span><span class="dk-sid">${esc(o.id)}</span><span class="dk-cc" style="${counts[o.id] ? '' : 'display:none'}">${counts[o.id] || ''}</span></div>`;
+        <div class="dk-meta"><span class="dk-name">${esc(o.name)}</span><span class="dk-sid" title="id ${esc(o.id)}">${esc(o.key || o.id)}</span><span class="dk-cc" style="${counts[o.id] ? '' : 'display:none'}">${counts[o.id] || ''}</span></div>`;
       const f = n.querySelector('iframe');
       f.dataset.src = `${location.pathname}?still=1&dk=thumb#${encodeURIComponent(o.id)}`;
       f.onload = () => setTimeout(() => f.classList.add('ready'), 350);

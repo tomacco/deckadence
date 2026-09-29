@@ -78,12 +78,25 @@ export function* walk(el) { for (const c of el.children) { yield c; yield* walk(
 const hasClass = (el, c) => (el.attrs.class || '').split(/\s+/).includes(c);
 export const inner = (html, el) => html.slice(el.openEnd, el.closeStart);
 
-/** Stations in DOM order: { id, name, x, y, el }. */
+/** Stations in DOM order: { id, key, name, x, y, el }. `key` is data-key (null if none). */
 export function stations(html, tree = parse(html)) {
   const out = [];
   for (const el of walk(tree)) if (el.tag === 'section' && hasClass(el, 'station'))
-    out.push({ id: el.attrs.id, name: el.attrs['data-name'] || el.attrs.id, x: +el.attrs['data-x'], y: +el.attrs['data-y'], el });
+    out.push({ id: el.attrs.id, key: el.attrs['data-key'] || null, name: el.attrs['data-name'] || el.attrs.id,
+               x: +el.attrs['data-x'], y: +el.attrs['data-y'], el });
   return out;
+}
+
+/** Find the station a record points at. `ref` is a string (an id, or a key) or a record with
+ *  { stationKey?, station? }. The KEY wins: ids are positional and may be renumbered, keys are
+ *  not. Old records (station: "s3", no key) still resolve by id. Keys match case-insensitively,
+ *  as the engine's #KEY deep links do. */
+export function findStation(list, ref) {
+  if (!ref) return null;
+  const up = v => String(v).toUpperCase();
+  const byKey = k => k && list.find(s => s.key && up(s.key) === up(k));
+  const key = typeof ref === 'object' ? ref.stationKey : null, id = typeof ref === 'object' ? ref.station : ref;
+  return byKey(key) || (id && list.find(s => s.id === id)) || byKey(id) || null;
 }
 
 function inlineOnly(el) {
@@ -113,8 +126,11 @@ export function editMap(html, tree = parse(html)) {
   return map;
 }
 
+const UNIT = /^([^:]+):(\d+(?:\.\d+)*)$/;
 export function resolve(html, key, tree = parse(html)) {
-  const [id, p] = key.split(':');
+  const m = UNIT.exec(String(key));
+  if (!m) return null;
+  const [, id, p] = m;
   const st = stations(html, tree).find(s => s.id === id);
   if (!st) return null;
   let el = st.el;
@@ -196,6 +212,8 @@ export function mergeText(sourceInner, editedInner) {
 /** Replace one unit's inner HTML. `base` = the inner the client started from: if the file
  *  moved underneath (an agent edited it), refuse rather than clobber. */
 export function applyText(html, key, base, edited) {
+  if (typeof key !== 'string' || !UNIT.test(key) || typeof base !== 'string' || typeof edited !== 'string')
+    return { error: 'a text edit needs { key: "station:path", base, html } as strings', status: 422 };
   const r = resolve(html, key);
   if (!r) return { error: `no element at ${key}`, status: 409 };
   const cur = inner(html, r.el);
@@ -203,20 +221,22 @@ export function applyText(html, key, base, edited) {
   const m = mergeText(cur, edited);
   if (m.error) return { error: m.error, status: 422 };
   if (m.html === cur) return { html, before: cur, after: cur, unchanged: true };
-  return { html: html.slice(0, r.el.openEnd) + m.html + html.slice(r.el.closeStart), before: cur, after: m.html, station: r.station.id };
+  return { html: html.slice(0, r.el.openEnd) + m.html + html.slice(r.el.closeStart), before: cur, after: m.html, station: r.station.id, stationKey: r.station.key };
 }
 
 /** Exact, single-occurrence find/replace scoped to ONE station's source range (the patch an
  *  agent can attach to a proposal, applied when the human presses Apply). */
-export function applyPatch(html, stationId, find, replace) {
-  const st = stations(html).find(s => s.id === stationId);
-  if (!st) return { error: `no station ${stationId}` };
+export function applyPatch(html, ref, find, replace) {
+  const st = findStation(stations(html), ref);
+  if (!st) return { error: `no station ${typeof ref === 'object' ? ref.stationKey || ref.station : ref}` };
+  if (typeof find !== 'string' || !find) return { error: 'the patch has no text to find' };
+  replace = String(replace ?? '');
   const seg = html.slice(st.el.start, st.el.end);
   const at = seg.indexOf(find);
   if (at < 0) return { error: 'the text to replace is no longer in that station' };
   if (seg.indexOf(find, at + 1) >= 0) return { error: 'the text to replace appears more than once in that station' };
   const a = st.el.start + at;
-  return { html: html.slice(0, a) + replace + html.slice(a + find.length) };
+  return { html: html.slice(0, a) + replace + html.slice(a + find.length), station: st };
 }
 
 /* ---------- reorder + staircase relayout ---------- */
@@ -290,5 +310,7 @@ export function reorder(html, order) {
     if (k < order.length - 1) out += html.slice(blocks[k].end, blocks[k + 1].start);  // original gap k→k+1
   });
   out += html.slice(blocks[blocks.length - 1].end);
-  return { html: out, before: ids, after: order };
+  const keyOf = Object.fromEntries(list.map(s => [s.id, s.key]));
+  return { html: out, before: ids, after: order, keyed: list.some(s => s.key),
+           beforeKeys: ids.map(id => keyOf[id]), afterKeys: order.map(id => keyOf[id]) };
 }

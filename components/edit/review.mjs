@@ -9,7 +9,7 @@
 //     "proposal": { "summary": "Shorten the heading",
 //                   "patch": { "find": "Invert contrast<br>to mark a turn", "replace": "Invert to turn" } } }
 //   `patch` is optional. With it, the human's Apply writes the change at once (exact match, once,
-//   inside the comment's station — add "station" to target another). Without it, Apply means
+//   inside the comment's station — add "station": "<KEY or id>" to target another). Without it, Apply means
 //   "yes, do it" and YOU make the change on your next turn.
 // The browser (serve.mjs) watches the sidecar: a reply appears in the open deck live.
 // Writes take the sidecar's lock (sidecar.mjs withLock) and re-read the file inside it, so a
@@ -28,6 +28,9 @@ const fail = msg => { console.error(msg); process.exit(1); };
 // Locked read-modify-write; throw (never exit) inside it, so the lock is always released.
 const update = fn => { try { return R.update(deck, fn); } catch (e) { fail(e.message); } };
 
+// A station as a human says it: its KEY (stable across reorders), with the id as a hint.
+const where = r => r.stationKey ? `${r.stationKey} (${r.station})` : r.station;
+
 if (cmd === 'status') {
   const open = d.comments.filter(c => !c.resolved);
   const decisions = [];
@@ -35,7 +38,7 @@ if (cmd === 'status') {
   if (JSON_OUT) { console.log(JSON.stringify({ open, decisions, edits: d.edits }, null, 2)); process.exit(0); }
   console.log(`${R.sidecarPath(deck)} · ${open.length} open comment(s) · ${decisions.length} decision(s) · ${d.edits.length} edit(s)\n`);
   for (const c of open) {
-    console.log(`${c.id} · ${c.station} · ${c.author} · ${c.created}`);
+    console.log(`${c.id} · ${where(c)} · ${c.author} · ${c.created}`);
     if (c.anchor) console.log(`   at   ${c.anchor.selector}${c.anchor.text ? `  "${c.anchor.text}"` : ''}`);
     else console.log(`   at   (${c.at.x}, ${c.at.y}) in the 1920x1080 frame`);
     console.log(`   says ${c.text}`);
@@ -47,7 +50,10 @@ if (cmd === 'status') {
   }
   if (d.edits.length) {
     console.log('edits made in the browser (newest last):');
-    for (const e of d.edits.slice(-15)) console.log(`   ${e.id} ${e.at} ${e.kind}${e.station ? ' ' + e.station : ''}: ${JSON.stringify(e.before).slice(0, 70)} → ${JSON.stringify(e.after).slice(0, 70)}`);
+    for (const e of d.edits.slice(-15)) {
+      const [bf, af] = e.afterKeys ? [e.beforeKeys, e.afterKeys] : [e.before, e.after];   // a reorder, by key
+      console.log(`   ${e.id} ${e.at} ${e.kind}${e.station ? ' ' + where(e) : ''}: ${JSON.stringify(bf).slice(0, 70)} → ${JSON.stringify(af).slice(0, 70)}`);
+    }
   }
 } else if (cmd === 'reply') {
   let b; try { b = JSON.parse(readFileSync(0, 'utf8')); } catch (e) { fail(`reply.json on STDIN is not valid JSON (${e.message})`); }

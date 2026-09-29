@@ -56,14 +56,18 @@ The toolbar is the black pill at the top. A vermilion hairline around the stage 
   the human. Click it to jump from one to the next.
 - **Slides · `N`**: a sidebar of thumbnails. Each one is the deck itself in flat mode
   (`?still=1`), so it shows final states and never catches a station mid-animation. The stage
-  shrinks to make room. Drag a slide to reorder it, or use `Alt+↑/↓` on a focused slide.
+  shrinks to make room. Each thumbnail is labelled with the station's **key** (its id when it
+  has none), the name you say in review. Drag a slide to reorder it, or use `Alt+↑/↓` on a
+  focused slide.
 
 ## Reordering: slots, not renumbering
 
 The staircase is treated as **slots**. Slot *k* sits at slot *k−1* plus the step (pure right
 or pure down) it had before. A reorder moves stations between slots and rewrites every
-`data-x`/`data-y`, so the map keeps its shape and `check.mjs` keeps passing. **Ids never
-change.** The order IS the DOM order, so `#sN` deep links and id-scoped CSS survive the move.
+`data-x`/`data-y`, so the map keeps its shape and `check.mjs` keeps passing. **Neither ids
+nor keys change**: edit mode does not renumber `id="sN"` (an agent reordering by hand may, see
+`references/engine.md`), and `data-key` never moves. The order IS the DOM order, so `#KEY` and
+`#sN` deep links, `[data-key]`-scoped CSS and the sidecar's station references all survive.
 A comment directly above a station (no blank line between them, the first station included)
 travels with that station. A comment separated by a blank line, such as the template's
 layout-rule header above `s1`, stays where it is. The relayout lives once, in
@@ -89,8 +93,8 @@ JSON
 node components/edit/review.mjs deck/index.html resolve c3
 ```
 
-- `patch.find` must match the station's source **exactly and once**. Add `"station"` to target
-  a station other than the comment's. Without a patch, Apply means "yes, do it", and the agent
+- `patch.find` must match the station's source **exactly and once**. Add `"station"` (a key
+  like `"ORION"`, or an id) to target a station other than the comment's. Without a patch, Apply means "yes, do it", and the agent
   makes the change on its next turn.
 - A reply appears in the open browser live: the server watches the sidecar. If the agent edits
   the deck itself, the page reloads on the same station, with edit mode still on.
@@ -107,18 +111,30 @@ node components/edit/review.mjs deck/index.html resolve c3
 
 ### Sidecar format (`deckadence-review/1`)
 
+Stations are recorded by **both** `station` (the id when it was written) and `stationKey` (the
+station's `data-key`, when it has one). Readers resolve **key first**, then id: ids are
+positional and may be renumbered, keys are not. A sidecar written before keys existed
+(`"station": "s3"` only) still resolves by id. Comment anchors root on `[data-key="…"]` when
+the station has a key, so a pin survives a reorder or a renumber. `review.mjs` prints stations
+as `ORION (s3)`.
+
 ```jsonc
 { "format": "deckadence-review/1", "deck": "index.html",
-  "comments": [{ "id": "c1", "station": "s3", "at": { "x": 169, "y": 243 },
-    "anchor": { "selector": "#s3 > div.eyebrow", "text": "Beat change", "offset": { "x": 0.3, "y": 0.5 } },
+  "comments": [{ "id": "c1", "station": "s3", "stationKey": "ORION", "at": { "x": 169, "y": 243 },
+    "anchor": { "selector": "[data-key=\"ORION\"] > div.eyebrow", "text": "Beat change", "offset": { "x": 0.3, "y": 0.5 } },
     "text": "Eyebrow is redundant here", "author": "Ivan", "created": "…", "resolved": false,
     "replies": [{ "id": "c1.r1", "role": "agent", "author": "Claude", "created": "…", "text": "…",
-      "proposal": { "summary": "…", "patch": { "find": "…", "replace": "…" } },
+      "proposal": { "summary": "…", "patch": { "find": "…", "replace": "…", "station": "ORION" /* optional */ } },
       "decision": { "choice": "apply", "by": "Ivan", "at": "…", "applied": true } }] }],
-  "edits": [{ "id": "e1", "kind": "text", "station": "s3", "key": "s3:1", "selector": "#s3 > h2.display",
-              "before": "…", "after": "…", "author": "Ivan", "at": "…" },
-            { "id": "e2", "kind": "reorder", "before": ["s1","s2","s3"], "after": ["s1","s3","s2"], … }] }
+  "edits": [{ "id": "e1", "kind": "text", "station": "s3", "stationKey": "ORION", "key": "s3:1",
+              "selector": "[data-key=\"ORION\"] > h2.display", "before": "…", "after": "…", "author": "Ivan", "at": "…" },
+            { "id": "e2", "kind": "reorder", "before": ["s1","s2","s3"], "after": ["s1","s3","s2"],
+              "beforeKeys": ["VEGA","LYRA","ORION"], "afterKeys": ["VEGA","ORION","LYRA"], … },
+            { "id": "e3", "kind": "patch", "station": "s3", "stationKey": "ORION", "reply": "c1.r1", … }] }
 ```
+
+`edits[].key` is the text unit's address at the time of the edit (`station id:child path`),
+not a station key.
 
 ## Security model: localhost + same-origin only
 
@@ -133,7 +149,7 @@ The server can rewrite the deck, so it only takes orders from the page it served
 - A write must be `Content-Type: application/json` (415 otherwise). A page elsewhere can send
   a form or `text/plain` cross-origin without a preflight, but it cannot send JSON.
 - Bodies are capped at 1 MB (413). A malformed URL is a 400, and no request can crash the server.
-- Static serving hides dotfiles and dot-directories (`.git`, `.env`, the sidecar lock) and
+- Static serving hides dotfiles and dot-directories (`.git`, `.env`, …) and
   never leaves the deck's folder.
 
 Anything that scripts the server (a test, a tool) must send the same headers as the page:
