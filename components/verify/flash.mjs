@@ -63,7 +63,9 @@ if (!BROWSER) { console.error('no Chrome/Chromium/Edge found — set DECK_BROWSE
 const DPORT = 9222 + Math.floor(Math.random() * 700);
 const UDD = join(tmpdir(), `deck-flash-${process.pid}`);
 const chrome = spawn(BROWSER, ['--headless=new', '--disable-gpu', '--hide-scrollbars', `--remote-debugging-port=${DPORT}`,
-  `--user-data-dir=${UDD}`, '--window-size=1600,1000', 'about:blank'], { stdio: 'ignore' });
+  `--user-data-dir=${UDD}`, '--window-size=1600,1000',
+  // CI runners (Ubuntu 23.10+) block the user namespaces Chrome's sandbox needs
+  ...(process.env.CI ? ['--no-sandbox'] : []), 'about:blank'], { stdio: 'ignore' });
 async function done(code) { try { chrome.kill(); } catch {} server.close(); await sleep(300); await rm(UDD, { recursive: true, force: true }).catch(() => {}); process.exit(code); }
 
 let tabs = [];

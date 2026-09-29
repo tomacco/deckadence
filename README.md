@@ -117,6 +117,19 @@ It runs from a double-click. It loads anime.js and its fonts from CDNs, so vendo
 presenting somewhere with bad wifi. `→` advances, `O` shows the overview, `F` goes full
 screen, and `#s3` or `#LYRA` in the URL jumps to a station.
 
+## Tests
+
+```bash
+node --test tests/*.test.mjs
+```
+
+No dependencies: Node 22+ and, for the browser tests, Chrome or Chromium (set `DECK_BROWSER`
+to its path if it isn't found; without one those tests are skipped). The suite checks that
+the static gates pass the template and the landing and fail each kind of broken deck, that
+edit mode writes back byte-exact and keeps the deck valid, and that no station flashes in a
+real browser, including a test that puts the old flash bug back and expects the probe to
+catch it. GitHub Actions runs it on every pull request and on every push to `main`.
+
 ## Credits
 
 Made by **[Ivan "Tomacco"](https://github.com/tomacco)** and **Claude**, on stage and behind
