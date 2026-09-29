@@ -1,6 +1,6 @@
 ---
 name: deckadence
-description: 'Build indulgently animated, single-file HTML presentations — a spatial camera-over-a-world deck engine with cinematic transitions, choreographed reveals, and self-drawing SVG diagrams. Use when the user wants slides, a talk deck, a presentation, a keynote, or to present/pitch something — especially "like a Prezi", "animated slides", or "HTML slides". Works from zero — no framework, no build step, one HTML file.'
+description: 'Build single-file HTML presentations with considered, cinematic motion — a spatial camera-over-a-world deck engine with choreographed reveals and self-drawing SVG diagrams. Use when the user wants slides, a talk deck, a presentation, a keynote, or to present/pitch something — especially "like a Prezi", "animated slides", or "HTML slides". Works from zero — no framework, no build step, one HTML file.'
 ---
 
 # Deckadence

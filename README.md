@@ -1,48 +1,59 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="Deckadence — indulgently animated HTML presentations" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <img src="assets/banner.svg" alt="Deckadence. The room goes quiet. A skill for Claude Code." width="100%">
+  </picture>
 </p>
 
 <p align="center">
-  <a href="https://tomacco.github.io/deckadence/"><b>✦ See the live demo — the landing page is itself a deck ✦</b></a>
+  <a href="https://tomacco.github.io/deckadence/"><b>See it live</b></a>. The landing page is itself a Deckadence deck.
 </p>
 
 ---
 
-**Deckadence** is a skill for [Claude Code](https://claude.com/claude-code) that turns
-"make me slides" into a **cinematic, single-file HTML presentation**: stations placed on an
-infinite 2D plane, a virtual camera that glides and dives between them, headings that rise
-line by line, and SVG diagrams that draw themselves while you talk.
+**Deckadence** is a skill for [Claude Code](https://claude.com/claude-code). Ask Claude for a
+presentation and you get one HTML file: your ideas placed on a large plane, a camera that
+moves from one to the next, headings that rise a line at a time, and diagrams that draw
+themselves while you speak.
 
-No PowerPoint. No framework. No build step. One HTML file you can open anywhere, present
-from anywhere, and version like code.
+Nothing to install for your audience. It opens in any browser, works on a phone after the
+talk, and lives in git like the rest of your work.
 
-It was built live for **[Rules, Not Vibes](https://tomacco.github.io/rules-not-vibes/)** —
-a talk at the Claude event on June 10, 2026 — and gifted to the audience. Everything in
-this skill was distilled from the craft (and the bugs) of making that deck real.
+It was built for **[Rules, Not Vibes](https://tomacco.github.io/rules-not-vibes/)**, a talk at
+the Claude event on June 10, 2026, and given to the people in the room. Every rule in it came
+from making that deck work on the night.
 
 ## What you get
 
-- 🎥 **A camera over a world** — slides aren't pages, they're *places*. The camera pans,
-  zooms, dives into full-screen websites, and can pull back to show the whole map (press `O`).
-- ✍️ **Choreographed reveals** — weighty line-rise headings, staggered fades, scene
-  controllers for multi-beat animated stations that cancel cleanly and replay on re-entry.
-- 🖋 **Self-drawing SVG** — node graphs, flourishes, and diagrams that construct themselves
-  in narrative order: stroke-draw wires, pulses flowing along paths, icons that beat.
-- 🎨 **Brand-agnostic by design** — the engine never hardcodes a look. The skill asks for
-  your design reference first; if you don't have one, it picks one of six curated
-  directions (Brutalist, Editorial, Terminal, Swiss, Playful, Midnight Luxe) based on your
-  audience and mood — and tells you why.
-- ⌨️ **Presenter-grade navigation** — arrows/space, overview mode, clickable progress rail
-  with tooltips, stable station keys in the HUD (`LYRA · ON THE MAP`) that survive
-  reorders, `#LYRA` deep links for rehearsal, plus a ready pattern for auto-playing
-  reels the presenter can take over (they stop at the end — they never loop over you).
-- ✏️ **Edit mode, for humans** — serve the deck with `components/edit/serve.mjs` and add
-  `?edit=1`. Edit text in place, pin comments for the agent, apply or decline its proposed
-  changes, drag stations into a new order. All of it is written back to the HTML and to one
-  sidecar JSON file the agent reads. Off by default, and never on during a presentation.
-- 🪤 **The traps, pre-stepped-on** — mid-word line breaks, final-state flashes,
-  reduced-motion killing the show, iframe `100vh` ballooning… eleven of them, documented,
-  with the fixes baked in.
+- **A camera over a world.** Each slide is a place on a plane. The camera glides between
+  them, dives in for a big moment, and steps back to show the whole map when you press `O`.
+- **Reveals with timing.** Headings rise line by line, supporting text follows, and animated
+  scenes stop cleanly when you move on and replay when you come back.
+- **Drawings that happen live.** Diagrams, paths and marks draw themselves in the order you
+  tell the story.
+- **Your brand, or a considered default.** The skill asks for your design reference first and
+  treats it as the contract. Without one it picks from seven directions (Brutalist,
+  Editorial, Terminal, Swiss, Playful, Midnight Luxe, Gallery), says which and why, and offers
+  to swap.
+- **Built for the person presenting.** Arrow keys and space, an overview, a clickable progress
+  rail, full screen with `F`, and stable station keys like `LYRA` that survive a reorder. Say
+  "fix LYRA" in review and it still means the same slide tomorrow. `#LYRA` deep-links to it.
+- **Good on phones.** Swipe to navigate, a full-screen button, a rotate hint for portrait, and
+  a letterbox that matches each slide. People reopen good talks on the way home.
+- **Edit mode.** Serve the deck with `node components/edit/serve.mjs deck/index.html` and open
+  it with `?edit=1`. Change text where it stands, pin comments for Claude, accept or decline
+  its proposals, drag slides into a new order. Everything is written back into the HTML and
+  one sidecar JSON file that Claude reads. It is off by default and never on while you present.
+- **Checks before you ship.** `components/verify/check.mjs` runs static gates on the file
+  (layout staircase, keys, scene wiring, phone chrome). `components/verify/shoot.sh` takes a
+  still screenshot of every slide, so Claude looks at the deck before calling it done.
+- **Twenty-one traps already handled.** Words broken mid-line, a finished frame flashing
+  before its animation, reduced-motion settings killing the show, iframes that balloon. Each
+  one is written down in `references/pitfalls.md` with its fix built into the template.
+
+<p align="center">
+  <img src="assets/edit-mode/proposal.jpg" alt="Edit mode: a comment thread on a slide, with Claude's proposed change and Apply / Keep / Something else buttons" width="80%">
+</p>
 
 ## Install
 
@@ -54,60 +65,61 @@ git clone https://github.com/tomacco/deckadence ~/.claude/skills/deckadence
 git clone https://github.com/tomacco/deckadence "$env:USERPROFILE\.claude\skills\deckadence"
 ```
 
-That's it. Open Claude Code and ask:
+Then open Claude Code and ask:
 
 > *"Make me a deck about how our migration actually went."*
 
-Claude reads the skill, asks whether you have a design reference (your Figma is the
-contract — that rule was earned painfully), structures your story into stations, and builds
-the file.
+Claude asks whether you have a design reference, maps your story into stations for you to
+approve, builds the file, and screenshots every slide before handing it over.
+
+To update later: `git -C ~/.claude/skills/deckadence pull`.
 
 ## How it works
 
 ```
-your story  ──▶  stations on an infinite plane  ──▶  a camera that flies
-                 (1920×1080 frames, monotone          (anime.js v4 tweens one
-                  down/right staircase)                {x, y, zoom} object)
+your story  ──▶  stations on one plane      ──▶  a camera that moves
+                 (1920×1080 frames, each         (anime.js v4 animates a single
+                  step goes right or down)        {x, y, zoom} object)
 ```
-
-Three moving parts, ~300 lines of engine, all in one file:
 
 | Piece | What it does |
 |---|---|
-| `template/starter.html` | A complete working 6-station deck — engine, HUD, nav, one animated SVG scene. The starting point for every build. |
-| `SKILL.md` | The workflow Claude follows: design direction → narrative → layout → animation → verification. |
-| `references/` | The deep craft: engine internals, motion choreography, SVG recipes, the design-direction catalog, and the pitfalls list. |
+| `template/starter.html` | A complete six-station deck: engine, HUD, navigation, phone layer, one animated SVG scene. Every build starts from a copy of it. |
+| `SKILL.md` | The workflow Claude follows: design direction, story, layout, animation, verification, review. |
+| `references/` | The craft in depth: engine internals, motion, SVG recipes, the design directions, edit mode, and the pitfalls list. |
+| `components/` | Code to splice in rather than retype: verification gates, a question-then-reveal scene, a fly-through, live-website stations, isometric scenes, and edit mode. |
 
-## The rules it enforces
+The engine is about 500 lines of commented JavaScript inside the template. No framework and
+no build step.
 
-A few of the hard rules baked into the skill — each one paid for with a real bug or a real
-ugly deck:
+## Rules it keeps
 
-1. Every station gets a transition, even subtle. Never a bare cut.
+Each one was paid for with a real bug or a deck that looked wrong.
+
+1. Every station arrives with a transition, even a quiet one.
 2. One element owns each moment. If two things pulse, neither is the focus.
-3. Headings split into **lines**, never characters (char-splitting breaks words mid-word).
-4. Initial states are set **before** elements become visible — no final-state flash.
-5. Motion is content: reduced-motion gets calmer timing, never a dead cut.
-6. Auto-playing reels stop at the end. They never loop over the speaker.
-7. One accent color, used deliberately.
+3. Headings split into lines, never characters. Character splitting breaks words mid-word.
+4. Initial states are set before anything is visible, so the finished frame never flashes.
+5. Motion is content. Reduced-motion gets calmer timing, never a dead cut.
+6. Auto-playing sequences stop at the end. They never loop over the speaker.
+7. One accent color per station, used on purpose.
 
-## Try the template right now
+## Try the template
 
 ```bash
-# no install needed — it runs from a double-click (internet required: the starter
-# loads anime.js + fonts from CDNs; vendor both before presenting for real)
 open template/starter.html        # macOS
 start template\starter.html       # Windows
 ```
 
-`→` to advance · `O` for the overview · click the dots · add `#ORION` (a station
-key) or `#s3` to the URL to deep-link.
+It runs from a double-click. It loads anime.js and its fonts from CDNs, so vendor both before
+presenting somewhere with bad wifi. `→` advances, `O` shows the overview, `F` goes full
+screen, and `#s3` or `#LYRA` in the URL jumps to a station.
 
 ## Credits
 
-Made by **[Ivan "Tomacco"](https://github.com/tomacco)** & **Claude**, on stage and behind
-it. Born from *Rules, Not Vibes* (with **Laura "Rose Days"**) — a talk about why on-brand
-isn't taste, it's rules a machine can follow. This skill is those rules, for presentations.
+Made by **[Ivan "Tomacco"](https://github.com/tomacco)** and **Claude**, on stage and behind
+it. Born from *Rules, Not Vibes* with **Laura "Rose Days"**, a talk about why on-brand is a
+set of rules a machine can follow. This skill is those rules, applied to presentations.
 
-Animation by [anime.js v4](https://animejs.com). MIT licensed — take it, reskin it,
-present something indecent.
+Animation by [anime.js v4](https://animejs.com). Type on the landing page: Newsreader
+(Production Type) and Inter (Rasmus Andersson). MIT licensed.

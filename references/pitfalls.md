@@ -103,7 +103,7 @@ Every trap here has actually bitten. Check this list before declaring a deck don
     slide. Say the station KEY (`LYRA`), shown in the HUD. A slide that became a different
     slide gets a new key; retired keys are never reused (`engine.md`, Station identity).
 
-19. **Rail dots that drift between slides.** A HUD laid out as a `space-between` flex row puts
+21. **Rail dots that drift between slides.** A HUD laid out as a `space-between` flex row puts
     the rail wherever the (per-slide) station name leaves it — the same pixel becomes a
     different dot on the next slide. Keep the `1fr auto 1fr` grid. To verify, step through
     every station and compare each dot's CENTRE (`getBoundingClientRect` left + width/2) —
