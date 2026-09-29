@@ -419,7 +419,7 @@
     const counterW = hud.querySelector('.counter').scrollWidth;
     const nameMin = Math.min(160, inner * 0.2);    // room for "KEY · NAME…" before the ellipsis
     let avail = inner - 2 * (Math.max(counterW, nameMin) + CLEAR);
-    if (!(inner > 0) || avail < 100) avail = Math.max(100, vw() * 0.5 - 2 * CLEAR);   // hidden HUD → a safe guess
+    if (!(inner > 0)) avail = Math.max(100, vw() * 0.5 - 2 * CLEAR);   // hidden HUD → a safe guess
     const max = Math.max(5, Math.floor((avail + GAP) / (DOT + GAP)));   // k dots span k·DOT + (k-1)·GAP
     if (n <= max) { dots.forEach(d => d.classList.remove('out', 'edge')); return; }
     const start = Math.min(Math.max(0, i - Math.floor(max / 2)), n - max), end = start + max - 1;
@@ -770,6 +770,7 @@
     const st = stations[start];
     st.el.style.visibility = '';                       // same tick as the reset → no flash
     updateCulling();                                   // (touch: re-cull if the user moved on)
+    railWindow(cur);                                   // web fonts can widen the counter
     if (cur !== start) return;                         // user already navigated away
     revealStation(st);
   });
