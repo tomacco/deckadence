@@ -89,7 +89,7 @@ export function stations(html, tree = parse(html)) {
 function inlineOnly(el) {
   return el.children.every(c => INLINE.has(c.tag) && inlineOnly(c));
 }
-const plain = s => s.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+const plain = s => decode(s.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
 
 /** Editable text units per station: the OUTERMOST elements whose content is text + inline
  *  phrasing. Address = station id + element-child index path (stable across a reveal: the
@@ -140,9 +140,29 @@ const skeleton = toks => toks.filter(x => x.t === 'tag' && x.name !== 'br' && x.
 const sameTag = (a, b) => a.name === b.name && a.close === b.close &&
   JSON.stringify(parseAttrs(a.s.replace(/^<\/?[\w:-]+|\/?>$/g, ''))) === JSON.stringify(parseAttrs(b.s.replace(/^<\/?[\w:-]+|\/?>$/g, '')));
 
+// Entities, decoded, so an unchanged run is recognised however it was spelled: the browser
+// serialises `&mdash;` back as `—`, and a blur without typing must not rewrite the source.
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', shy: '­', ensp: ' ', emsp: ' ',
+  thinsp: ' ', hairsp: ' ', zwj: '‍', zwnj: '‌', mdash: '—', ndash: '–', minus: '−', hellip: '…',
+  lsquo: '‘', rsquo: '’', sbquo: '‚', ldquo: '“', rdquo: '”', bdquo: '„', laquo: '«', raquo: '»', lsaquo: '‹', rsaquo: '›',
+  middot: '·', bull: '•', times: '×', divide: '÷', plusmn: '±', deg: '°', prime: '′', Prime: '″', copy: '©', reg: '®',
+  trade: '™', sect: '§', para: '¶', dagger: '†', Dagger: '‡', euro: '€', pound: '£', yen: '¥', cent: '¢', larr: '←',
+  rarr: '→', uarr: '↑', darr: '↓', harr: '↔', lArr: '⇐', rArr: '⇒', hArr: '⇔', le: '≤', ge: '≥', ne: '≠', asymp: '≈',
+  infin: '∞', check: '✓', iexcl: '¡', iquest: '¿', frac12: '½', frac14: '¼', frac34: '¾', sup2: '²', sup3: '³', micro: 'µ' };
+export function decode(s) {
+  return s.replace(/&(?:#(\d+)|#[xX]([\da-fA-F]+)|([a-zA-Z][a-zA-Z\d]*));?/g, (m, d, h, n) => {
+    if (n) return ENT[n] ?? m;
+    const cp = d ? +d : parseInt(h, 16);
+    return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+  });
+}
+// A run of tokens as the reader sees it: decoded text, a line break as \n.
+const seen = toks => toks.map(x => x.t === 'text' ? decode(x.s) : x.name === 'br' ? '\n' : '').join('');
+
 /** Merge a browser-serialised edit onto the source inner HTML. Keeps the SOURCE spelling of
- *  every tag (quotes, attribute order) and takes only text + <br> from the edit.
- *  Returns { html } or { error }. */
+ *  every tag (quotes, attribute order), and of every text run whose decoded text did not
+ *  change (entities like `&mdash;` survive a save that did not touch them); takes only text
+ *  + <br> from the edit. Returns { html } or { error }. */
 export function mergeText(sourceInner, editedInner) {
   const a = tokens(sourceInner), b = tokens(editedInner.replace(/<br\s*\/?>\s*$/i, ''));  // a trailing <br> is a contenteditable artefact
   const sa = skeleton(a), sb = skeleton(b);
@@ -151,12 +171,25 @@ export function mergeText(sourceInner, editedInner) {
   if (b.some(x => x.t === 'comment')) return { error: 'comments are not editable text' };
   const brSpelling = (a.find(x => x.t === 'tag' && x.name === 'br') || { s: '<br>' }).s;
   const keepNbsp = /&nbsp;| /.test(sourceInner);
-  let k = 0, out = '';
-  for (const x of b) {
-    if (x.t === 'text') out += keepNbsp ? x.s : x.s.replace(/&nbsp;| /g, ' ');
-    else if (x.name === 'br' || x.name === 'wbr') out += x.name === 'br' ? brSpelling : x.s;
-    else out += sa[k++].s;
-  }
+  for (const x of b) if (x.t === 'text' && !keepNbsp) x.s = x.s.replace(/&nbsp;| /g, ' ');
+  // Segments: the runs of text / <br> between two structural tags. Same count on both sides.
+  const segs = toks => { const out = [[]]; for (const x of toks) { if (x.t === 'tag' && x.name !== 'br' && x.name !== 'wbr') out.push([]); else out[out.length - 1].push(x); } return out; };
+  const ga = segs(a), gb = segs(b);
+  let out = '';
+  gb.forEach((seg, k) => {
+    const src = ga[k];
+    if (seen(src) === seen(seg)) out += src.map(x => x.s).join('');          // untouched: source bytes
+    else {
+      // Same shape of text and breaks: keep the source spelling of each run that did not change.
+      const shape = t => t.map(x => x.t === 'text' ? 't' : x.name).join();
+      const aligned = !src.some(x => x.t === 'comment') && shape(src) === shape(seg);
+      seg.forEach((x, i) => {
+        if (x.t === 'text') out += aligned && decode(src[i].s) === decode(x.s) ? src[i].s : x.s;
+        else out += x.name === 'br' ? brSpelling : x.s;
+      });
+    }
+    if (k < sa.length) out += sa[k].s;
+  });
   return { html: out };
 }
 
@@ -188,10 +221,21 @@ export function applyPatch(html, stationId, find, replace) {
 
 /* ---------- reorder + staircase relayout ---------- */
 
+/** Set one attribute in an open tag's source text. Attributes are found with the tokenizer's
+ *  own TAG/ATTR spans, so a `data-x=` inside ANOTHER attribute's value is never touched. */
 function setAttr(tagText, name, value) {
-  const re = new RegExp(`(\\s${name}\\s*=\\s*)(?:"[^"]*"|'[^']*'|[^\\s"'=<>\`]+)`);
-  if (re.test(tagText)) return tagText.replace(re, `$1"${value}"`);
-  return tagText.replace(/\s*\/?>$/, m => ` ${name}="${value}"${m}`);
+  TAG.lastIndex = 0;
+  const m = TAG.exec(tagText);
+  if (!m) throw new Error(`not an open tag: ${tagText.slice(0, 40)}`);
+  const base = 1 + m[1].length;                      // the attribute list starts after '<name'
+  for (const a of m[2].matchAll(ATTR)) {
+    if (a[1].toLowerCase() !== name) continue;
+    const at = base + a.index, eq = /^[^\s"'>\/=]+\s*=\s*/.exec(a[0]);
+    const val = eq ? `${a[0].slice(0, eq[0].length)}"${value}"` : `${a[0]}="${value}"`;
+    return tagText.slice(0, at) + val + tagText.slice(at + a[0].length);
+  }
+  const end = base + m[2].length;
+  return tagText.slice(0, end) + ` ${name}="${value}"` + tagText.slice(end);
 }
 
 /** The staircase as SLOTS: slot k sits at slot k-1 plus the step it had before. Reordering
@@ -204,8 +248,23 @@ export function relayout(list) {
   return out;
 }
 
+/** Where a station's NOTE starts inside `gap` (the source between the previous station, or the
+ *  parent's open tag, and this station): the comment(s) DIRECTLY above it — no blank line in
+ *  between, nothing but whitespace before. Returns gap.length when it has none. A comment
+ *  separated by a blank line (the template's layout-rule header above s1) stays put. */
+function noteStart(gap) {
+  let at = gap.length;
+  for (;;) {
+    const o = gap.lastIndexOf('<!--', at - 1);
+    if (o < 0 || !/^<!--[\s\S]*?-->[ \t]*(?:\r?\n[ \t]*)?$/.test(gap.slice(o, at))) break;
+    at = o;
+  }
+  if (at === gap.length || /\S/.test(gap.slice(0, at).replace(/<!--[\s\S]*?-->/g, ''))) return gap.length;
+  return at;
+}
+
 /** Reorder stations to `order` (ids) and rewrite every data-x/data-y. A comment directly
- *  above a station (after the previous one) is that station's note and travels with it. */
+ *  above a station (the first one included) is that station's note and travels with it. */
 export function reorder(html, order) {
   const list = stations(html);
   const ids = list.map(s => s.id);
@@ -214,12 +273,8 @@ export function reorder(html, order) {
   const parent = list[0].el.parent;
   if (list.some(s => s.el.parent !== parent)) return { error: 'stations do not share one parent — reorder by hand' };
   const blocks = list.map((s, k) => {
-    let start = s.el.start;
     const floor = k ? list[k - 1].el.end : parent.openEnd;
-    const before = html.slice(floor, start);
-    const c = /<!--[\s\S]*?-->\s*$/.exec(before);
-    if (k && c && !/\S/.test(before.slice(0, c.index).replace(/<!--[\s\S]*?-->/g, ''))) start = floor + c.index;
-    return { id: s.id, start, end: s.el.end, tagEnd: s.el.openEnd };
+    return { id: s.id, start: floor + noteStart(html.slice(floor, s.el.start)), end: s.el.end, tagStart: s.el.start, tagEnd: s.el.openEnd };
   });
   const slots = relayout(list);
   const byId = Object.fromEntries(blocks.map(b => [b.id, b]));
@@ -227,7 +282,7 @@ export function reorder(html, order) {
   order.forEach((id, k) => {
     const b = byId[id];
     let text = html.slice(b.start, b.end);
-    const open = b.tagEnd - b.start, tagStart = text.lastIndexOf('<section', open);
+    const open = b.tagEnd - b.start, tagStart = b.tagStart - b.start;
     let tag = text.slice(tagStart, open);
     tag = setAttr(setAttr(tag, 'data-x', slots[k].x), 'data-y', slots[k].y);
     text = text.slice(0, tagStart) + tag + text.slice(open);
