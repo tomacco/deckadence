@@ -22,6 +22,7 @@ node components/edit/serve.mjs deck/index.html            # bun works too
 | One sidecar per deck | `deck/index.review.json` holds the edits, comments, replies and decisions. It is plain JSON, next to the deck. |
 | The deck file stays clean | The server injects `edit.js`/`edit.css` on the wire. `file://`, GitHub Pages and `python -m http.server` serve the deck exactly as before. |
 | The engine stays the owner | The layer drives the camera and reveals through `window.Deckadence` (see below) and never re-implements either. |
+| Localhost + same-origin only | See **Security model** below. Nothing else on the machine or the web can write through the server. |
 
 ## What the human gets
 
@@ -38,6 +39,9 @@ The toolbar is the black pill at the top. A vermilion hairline around the stage 
     so its old size is cleared first.
   - If the file changed underneath (the agent edited it), the save is refused (409) and the
     latest text is reloaded. Nothing is clobbered.
+  - Clicking in and out without typing writes nothing and logs nothing. A save keeps the
+    source spelling of every text run whose text did not change, so `&mdash;` or `&nbsp;`
+    in an untouched line survives an edit to the line next to it.
 - **Comment · `C`**: click anywhere on a station and write to the agent. The pin records the
   station, the point in the 1920×1080 frame, and a stable selector for the element under the
   click (plus its text and a relative offset), so the pin follows its element through a layout
@@ -46,6 +50,8 @@ The toolbar is the black pill at the top. A vermilion hairline around the stage 
 - **Decisions**: when the agent attaches a proposal to a reply, the thread shows **Apply
   change**, **Keep as is** and **Something else…** (with a note). The decision is written to
   the sidecar. If the proposal carries a `patch`, Apply also writes it into the deck at once.
+  A proposal is decided **once**: the buttons lock on the first click, and the server refuses
+  a second decision (a double click, a second tab) with 409 and keeps the first.
   The toolbar counts open comments, and a red `needs you` flags proposals that are waiting on
   the human. Click it to jump from one to the next.
 - **Slides · `N`**: a sidebar of thumbnails. Each one is the deck itself in flat mode
@@ -58,7 +64,9 @@ The staircase is treated as **slots**. Slot *k* sits at slot *k−1* plus the st
 or pure down) it had before. A reorder moves stations between slots and rewrites every
 `data-x`/`data-y`, so the map keeps its shape and `check.mjs` keeps passing. **Ids never
 change.** The order IS the DOM order, so `#sN` deep links and id-scoped CSS survive the move.
-A comment directly above a station travels with that station. The relayout lives once, in
+A comment directly above a station (no blank line between them, the first station included)
+travels with that station. A comment separated by a blank line, such as the template's
+layout-rule header above `s1`, stays where it is. The relayout lives once, in
 `components/edit/source.mjs` (`reorder`, `relayout`), and is not rewritten in each deck.
 
 ## The agent's side
@@ -86,6 +94,13 @@ node components/edit/review.mjs deck/index.html resolve c3
   makes the change on its next turn.
 - A reply appears in the open browser live: the server watches the sidecar. If the agent edits
   the deck itself, the page reloads on the same station, with edit mode still on.
+- `review.mjs` and the server never overwrite each other. Every write takes
+  `index.review.json.lock` (created with O_EXCL, holding the writer's pid) and re-reads the
+  sidecar inside it. A lock whose process is gone, or that is older than 15 s, is broken; one
+  held longer than 5 s by a live process fails the write with a message naming the file.
+- If the sidecar is not valid JSON (a hand edit gone wrong), nothing is written, not even a
+  text edit to the deck. `review.mjs` exits with the parse error, `/__deck/state` carries it
+  as `reviewError`, and the browser shows it in a toast that stays until the file is fixed.
 - On its next turn, the agent runs `status` first. `decision.choice` is `apply`, `keep` or
   `other` (with `text`). `applied: false` + `error` means the patch no longer matched. Re-read
   the station and propose again.
@@ -104,6 +119,26 @@ node components/edit/review.mjs deck/index.html resolve c3
               "before": "…", "after": "…", "author": "Ivan", "at": "…" },
             { "id": "e2", "kind": "reorder", "before": ["s1","s2","s3"], "after": ["s1","s3","s2"], … }] }
 ```
+
+## Security model: localhost + same-origin only
+
+The server can rewrite the deck, so it only takes orders from the page it served:
+
+- It listens on `127.0.0.1` only.
+- Every request must carry a `Host` of `127.0.0.1:PORT`, `localhost:PORT` or `[::1]:PORT`;
+  anything else gets 421. This stops DNS rebinding, where a web page's own hostname is
+  pointed at 127.0.0.1 to make its requests "same-origin".
+- A write (`POST /__deck/*`) needs an `Origin` of `http://` plus one of those hosts. Without
+  an `Origin` header, it needs `Sec-Fetch-Site: same-origin`. Otherwise it gets 403.
+- A write must be `Content-Type: application/json` (415 otherwise). A page elsewhere can send
+  a form or `text/plain` cross-origin without a preflight, but it cannot send JSON.
+- Bodies are capped at 1 MB (413). A malformed URL is a 400, and no request can crash the server.
+- Static serving hides dotfiles and dot-directories (`.git`, `.env`, the sidecar lock) and
+  never leaves the deck's folder.
+
+Anything that scripts the server (a test, a tool) must send the same headers as the page:
+`Origin: http://127.0.0.1:PORT` and `Content-Type: application/json`. `review.mjs` does not
+use HTTP. It writes the sidecar directly under the shared lock.
 
 ## Engine hooks: `window.Deckadence`
 

@@ -15,7 +15,16 @@
   if (Q.get('dk') === 'thumb') { document.documentElement.classList.add('dk-thumb'); return; }
   if (window.top !== window) return;
   const D = window.Deckadence;
-  if (!D) { console.warn('[deckadence edit] this deck predates window.Deckadence — rebuild it from the current template to edit it'); return; }
+  if (!D) {
+    // Two different failures look alike here: the engine never ran (anime.js did not load, so
+    // it died on its first line), or it ran but is from a template without the hooks.
+    if (typeof window.anime === 'undefined')
+      console.warn('[deckadence edit] anime.js did not load, so the deck engine never started — edit mode needs the engine. Check the network, or vendor anime.js next to the deck.');
+    else if (/window\.Deckadence\s*=/.test([...document.scripts].map(s => s.textContent).join('\n')))
+      console.warn('[deckadence edit] the deck engine failed before it exposed window.Deckadence — see the error above; edit mode needs the engine running.');
+    else console.warn('[deckadence edit] this deck predates window.Deckadence — rebuild it from the current template to edit it');
+    return;
+  }
   if (D.still) return;
 
   /* ---------- small tools ---------- */
@@ -79,9 +88,11 @@
   const statusEl = bar.querySelector('#dk-status'), inboxEl = bar.querySelector('#dk-inbox'), listEl = nav.querySelector('#dk-list');
 
   let toastT = 0;
-  function toast(msg, bad) {
+  function toast(msg, bad, sticky) {     // sticky: stays until the problem is gone
     toastEl.innerHTML = `<i></i><span>${esc(msg)}</span>`; toastEl.classList.toggle('bad', !!bad);
-    toastEl.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => toastEl.classList.remove('show'), bad ? 5200 : 2600);
+    toastEl.classList.add('show'); clearTimeout(toastT);
+    if (sticky) toastEl.dataset.sticky = '1';
+    else { delete toastEl.dataset.sticky; toastT = setTimeout(() => toastEl.classList.remove('show'), bad ? 5200 : 2600); }
   }
   function status(kind, text) { statusEl.className = kind || ''; statusEl.querySelector('span').textContent = text; }
 
@@ -132,7 +143,11 @@
   async function refresh() {
     try { st = await (await fetch('/__deck/state', { cache: 'no-store' })).json(); }
     catch { status('error', 'Offline'); return; }
-    if (st.error) { status('error', 'Error'); toast(st.error, true); return; }
+    if (st.error) { const e = st.error; st = null; status('error', 'Error'); toast(e, true, true); return; }
+    // A sidecar that does not parse is shown, never papered over: every write is refused
+    // until the human or the agent fixes (or moves aside) the file.
+    if (st.reviewError) { status('error', 'Sidecar unreadable'); toast(st.reviewError, true, true); }
+    else if (toastEl.dataset.sticky) { toastEl.classList.remove('show'); delete toastEl.dataset.sticky; status('', 'Ready'); }
     bindUnits(); renderPins(); updateInbox();
     if (navOpen) renderNav(true);
     if (card && card.kind === 'thread') { const c = findC(card.id); c ? openThread(c, true) : closeCard(); }
@@ -193,7 +208,10 @@
     const { el, unit } = editing; editing = null;
     el.removeAttribute('contenteditable'); el.classList.remove('dk-editing');
     const html = el.innerHTML;
-    const same = html.replace(/<br>$/, '') === unit.html;
+    // Compare as the browser serialises BOTH sides: it writes `&mdash;` back as `—`, so a
+    // click-in-click-out would otherwise look like an edit (the server checks again).
+    const norm = t => { const x = document.createElement('template'); x.innerHTML = t; return x.innerHTML; };
+    const same = html.replace(/<br>$/, '') === norm(unit.html);
     if (cancel || same) { paint(el, unit.html); status('', cancel ? 'Cancelled' : 'Ready'); return afterEdit(); }
     paint(el, html);                                   // optimistic: show it while it saves
     status('saving', 'Saving…');
@@ -378,25 +396,33 @@
       toast(c.resolved ? 'Reopened' : `Resolved — ${c.id} stays in the sidecar as history`);
       if (!c.resolved && !showResolved) closeCard();
     };
+    // A proposal is decided once: every button for it locks on the first click (the server
+    // also refuses a second decision with 409), and unlocks only if the save failed.
+    const lock = (rid, v) => el.querySelectorAll(`.dk-acts[data-reply="${CSS.escape(rid)}"] button, [data-send="${CSS.escape(rid)}"]`).forEach(x => { x.disabled = v; });
     el.querySelectorAll('[data-choice]').forEach(b => b.onclick = async () => {
       const rid = b.parentElement.dataset.reply;
       if (b.dataset.choice === 'other') { const o = el.querySelector(`.dk-other[data-for="${CSS.escape(rid)}"]`); o.classList.add('show'); o.querySelector('textarea').focus(); return; }
-      decide(rid, b.dataset.choice, '');
+      lock(rid, true);
+      if (!await decide(rid, b.dataset.choice, '')) lock(rid, false);
     });
-    el.querySelectorAll('[data-send]').forEach(b => b.onclick = () => {
+    el.querySelectorAll('[data-send]').forEach(b => b.onclick = async () => {
       const t = el.querySelector(`.dk-other[data-for="${CSS.escape(b.dataset.send)}"] textarea`).value.trim();
       if (!t) return toast('Tell the agent what you want instead', true);
-      decide(b.dataset.send, 'other', t);
+      lock(b.dataset.send, true);
+      if (!await decide(b.dataset.send, 'other', t)) lock(b.dataset.send, false);
     });
   }
+  // true when the proposal is now decided (by this click, or already before it)
   async function decide(rid, choice, text) {
     status('saving', 'Saving…');
     const r = await api('decide', { reply: rid, choice, text });
-    if (!r.ok) { status('error', 'Not saved'); return toast(r.error || 'Not saved', true); }
+    if (r.status === 409) { status('', 'Ready'); toast('Already decided — showing the recorded decision'); refresh(); return true; }
+    if (!r.ok) { status('error', 'Not saved'); toast(r.error || 'Not saved', true); return false; }
     status('saved', 'Saved');
     if (r.decision.applied === false) toast('Recorded, but the patch did not apply: ' + r.decision.error, true);
     else toast(choice === 'apply' ? (r.decision.applied ? 'Applied to the deck' : 'Recorded — the agent applies it next turn') : 'Decision recorded for the agent');
     if (r.reload) { pendingReload = true; closeCard(); }
+    return true;
   }
 
   /* ---------- slide navigator ---------- */

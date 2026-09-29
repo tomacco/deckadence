@@ -12,6 +12,8 @@
 //   inside the comment's station — add "station" to target another). Without it, Apply means
 //   "yes, do it" and YOU make the change on your next turn.
 // The browser (serve.mjs) watches the sidecar: a reply appears in the open deck live.
+// Writes take the sidecar's lock (sidecar.mjs withLock) and re-read the file inside it, so a
+// reply never overwrites a comment the human posted a moment earlier through the server.
 
 import { readFileSync } from 'node:fs';
 import * as R from './sidecar.mjs';
@@ -20,7 +22,11 @@ const [deck, cmd = 'status', id] = process.argv.slice(2).filter(a => a !== '--js
 const JSON_OUT = process.argv.includes('--json');
 if (!deck) { console.error('usage: review.mjs <deck.html> [status|reply <id>|resolve <id>|reopen <id>] [--json]'); process.exit(1); }
 const author = process.env.DECK_AGENT || 'Claude';
-const d = R.load(deck);
+let d;
+try { d = R.load(deck); } catch (e) { console.error(e.message); process.exit(1); }
+const fail = msg => { console.error(msg); process.exit(1); };
+// Locked read-modify-write; throw (never exit) inside it, so the lock is always released.
+const update = fn => { try { return R.update(deck, fn); } catch (e) { fail(e.message); } };
 
 if (cmd === 'status') {
   const open = d.comments.filter(c => !c.resolved);
@@ -44,21 +50,24 @@ if (cmd === 'status') {
     for (const e of d.edits.slice(-15)) console.log(`   ${e.id} ${e.at} ${e.kind}${e.station ? ' ' + e.station : ''}: ${JSON.stringify(e.before).slice(0, 70)} → ${JSON.stringify(e.after).slice(0, 70)}`);
   }
 } else if (cmd === 'reply') {
-  const c = R.findComment(d, id);
-  if (!c) { console.error(`no comment ${id}`); process.exit(1); }
-  const b = JSON.parse(readFileSync(0, 'utf8'));
-  if (!String(b.text || '').trim()) { console.error('reply needs "text"'); process.exit(1); }
-  c.replies ||= [];
-  const r = { id: `${c.id}.r${c.replies.length + 1}`, author, role: 'agent', created: R.now(), text: String(b.text).trim() };
-  if (b.proposal) r.proposal = b.proposal;
-  c.replies.push(r);
-  R.save(deck, d);
+  let b; try { b = JSON.parse(readFileSync(0, 'utf8')); } catch (e) { fail(`reply.json on STDIN is not valid JSON (${e.message})`); }
+  if (!String(b.text || '').trim()) fail('reply needs "text"');
+  const r = update(fresh => {
+    const c = R.findComment(fresh, id);
+    if (!c) throw new Error(`no comment ${id}`);
+    c.replies ||= [];
+    const r = { id: `${c.id}.r${c.replies.length + 1}`, author, role: 'agent', created: R.now(), text: String(b.text).trim() };
+    if (b.proposal) r.proposal = b.proposal;
+    c.replies.push(r);
+    return r;
+  });
   console.log(`replied ${r.id}${r.proposal ? ' with a proposal' : ''}`);
 } else if (cmd === 'resolve' || cmd === 'reopen') {
-  const c = R.findComment(d, id);
-  if (!c) { console.error(`no comment ${id}`); process.exit(1); }
-  c.resolved = cmd === 'resolve';
-  if (c.resolved) { c.resolvedBy = author; c.resolvedAt = R.now(); } else { delete c.resolvedBy; delete c.resolvedAt; }
-  R.save(deck, d);
-  console.log(`${cmd}d ${c.id}`);
-} else { console.error(`unknown command ${cmd}`); process.exit(1); }
+  update(fresh => {
+    const c = R.findComment(fresh, id);
+    if (!c) throw new Error(`no comment ${id}`);
+    c.resolved = cmd === 'resolve';
+    if (c.resolved) { c.resolvedBy = author; c.resolvedAt = R.now(); } else { delete c.resolvedBy; delete c.resolvedAt; }
+  });
+  console.log(`${cmd}d ${id}`);
+} else fail(`unknown command ${cmd}`);
