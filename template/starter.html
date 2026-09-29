@@ -821,7 +821,8 @@
   /* ---------- control-layer hooks ----------
      The ONE surface an outside layer (edit mode: components/edit/) may use. The engine stays
      the owner of the camera and the reveal; a layer asks through here and never re-implements
-     either. Read-only view of the stations: order is DOM order, ids are the stable address. */
+     either. Read-only view of the stations: order is DOM order; data-key (s.key) is the stable
+     address, ids are positional. */
   window.Deckadence = {
     version: 1,
     cam, stations, world, viewport: viewportEl,

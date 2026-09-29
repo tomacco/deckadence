@@ -14,7 +14,7 @@
 //                 before, after }
 // Resolved comments STAY (resolved:true) — the review history of a deck is not thrown away.
 
-import { readFileSync, writeFileSync, renameSync, existsSync, openSync, writeSync, closeSync, unlinkSync, statSync, linkSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, openSync, writeSync, closeSync, unlinkSync, statSync, fstatSync, readSync } from 'node:fs';
 import { basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
@@ -41,26 +41,50 @@ export function load(deck) {
  * Every write goes through withLock(): an O_EXCL lock file next to the sidecar, holding the
  * writer's pid. Inside the lock the sidecar is READ AGAIN, so a change is always applied to
  * the latest file, never to a copy loaded before someone else saved. A lock whose pid is dead,
- * or older than STALE_MS, is broken (a crashed writer never blocks the deck for good).
- * Breaking is race-safe: the stale lock is RENAMED aside (only one breaker can win that) and
- * re-checked there; a lock that turns out to be live is put back with link(), which never
- * overwrites. A writer removes the lock on exit only if it still holds ITS token. */
+ * or that is held by a live process for longer than any real write, is broken (a crashed writer never
+ * blocks the deck for good). Breakers are serialised by a second O_EXCL lock (`.lock.break`):
+ * under it the lock is re-read and re-judged, and only then unlinked, so a breaker can never
+ * remove a lock someone took after it looked. An empty or unreadable lock that is fresh is
+ * LIVE (its writer is between open and write). A writer removes the lock on exit only if it
+ * still holds its own token. */
 export const lockPath = deck => sidecarPath(deck) + '.lock';
-const STALE_MS = 15000, WAIT_MS = 5000;
+const WAIT_MS = 5000, EMPTY_STALE_MS = 15000, LIVE_STALE_MS = 10 * 60000, BREAK_STALE_MS = 30000;
 const nap = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 function alive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
+// The lock's identity (inode) if it is stale, else 0. Size, age and pid come from ONE open
+// file, so a lock released and retaken mid-check is never judged by its predecessor's age.
 function stale(p) {
+  let fd;
   try {
-    if (Date.now() - statSync(p).mtimeMs > STALE_MS) return true;
-    const pid = parseInt(readFileSync(p, 'utf8'), 10);
-    return pid > 0 && pid !== process.pid && !alive(pid);
-  } catch { return false; }   // it vanished: just retry
+    fd = openSync(p, 'r');
+    const st = fstatSync(fd), age = Date.now() - st.mtimeMs;
+    const buf = Buffer.alloc(64), n = readSync(fd, buf, 0, 64, 0);
+    const pid = parseInt(buf.toString('utf8', 0, n), 10);
+    let dead;
+    if (!(pid > 0)) dead = age > EMPTY_STALE_MS;             // no pid yet: live unless old
+    else if (pid === process.pid) dead = true;               // withLock is sync, not re-entrant: a leftover of ours
+    else dead = !alive(pid) || age > LIVE_STALE_MS;
+    return dead ? st.ino || -1 : 0;
+  } catch { return 0; }                                      // it vanished: just retry
+  finally { if (fd !== undefined) try { closeSync(fd); } catch {} }
 }
 function breakStale(p) {
-  const aside = `${p}.${process.pid}.${randomBytes(3).toString('hex')}.stale`;
-  try { renameSync(p, aside); } catch { return; }            // someone else broke (or released) it
-  if (!stale(aside)) { try { linkSync(aside, p); } catch {} } // it was live after all: put it back
-  try { unlinkSync(aside); } catch {}
+  const b = p + '.break';
+  let fd;
+  try { fd = openSync(b, 'wx'); }
+  catch (e) {
+    if (e.code !== 'EEXIST') throw e;
+    // another breaker is at work; its critical section is a stat, a read and an unlink, so a
+    // .break this old belongs to a breaker that was killed mid-way
+    try { if (Date.now() - statSync(b).mtimeMs > BREAK_STALE_MS) unlinkSync(b); } catch {}
+    return;
+  }
+  try {
+    closeSync(fd);
+    const ino = stale(p);                                    // re-judged under the break lock
+    if (ino && (ino === -1 || statSync(p).ino === ino)) unlinkSync(p);
+  } catch {}
+  finally { try { unlinkSync(b); } catch {} }
 }
 export function withLock(deck, fn) {
   const p = lockPath(deck), t0 = Date.now(), token = `${process.pid} ${randomBytes(6).toString('hex')}\n`;
@@ -69,8 +93,8 @@ export function withLock(deck, fn) {
     try { fd = openSync(p, 'wx'); break; }
     catch (e) {
       if (e.code !== 'EEXIST') throw e;
-      if (stale(p)) { breakStale(p); continue; }
       if (Date.now() - t0 > WAIT_MS) throw new Error(`${basename(p)} is held by another writer — if no serve.mjs or review.mjs is running, delete it`);
+      if (stale(p)) { breakStale(p); nap(1); continue; }
       nap(10);
     }
   }

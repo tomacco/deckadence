@@ -50,6 +50,27 @@ function commit(d, html, prev) {
   try { saveSide(d); } catch (e) { if (html != null) writeDeck(prev); throw e; }
 }
 
+// Back-fill: a sidecar written before the deck had keys records stations by id only. While
+// that id still names a keyed station, add its key now, so the record survives the next
+// renumber. Done once at start, under the lock; a sidecar that does not parse is left alone
+// (the layer reports it).
+function backfillKeys() {
+  if (!existsSync(SIDE)) return;
+  try {
+    locked(d => {
+      const list = S.stations(readDeck());
+      let n = 0;
+      for (const r of [...d.comments, ...d.edits]) {
+        if (!r || r.stationKey || typeof r.station !== 'string') continue;
+        const st = list.find(s => s.id === r.station);
+        if (st && st.key) { r.stationKey = st.key; n++; }
+      }
+      if (n) { commit(d); console.log(`  sidecar  added data-key to ${n} older record(s)`); }
+    });
+  } catch (e) { console.error(`  sidecar  ${e.message}`); }
+}
+backfillKeys();
+
 /* ---------- state the layer needs ---------- */
 function state() {
   const html = readDeck();

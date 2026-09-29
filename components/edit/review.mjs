@@ -17,6 +17,7 @@
 
 import { readFileSync } from 'node:fs';
 import * as R from './sidecar.mjs';
+import * as S from './source.mjs';
 
 const [deck, cmd = 'status', id] = process.argv.slice(2).filter(a => a !== '--json');
 const JSON_OUT = process.argv.includes('--json');
@@ -28,8 +29,15 @@ const fail = msg => { console.error(msg); process.exit(1); };
 // Locked read-modify-write; throw (never exit) inside it, so the lock is always released.
 const update = fn => { try { return R.update(deck, fn); } catch (e) { fail(e.message); } };
 
-// A station as a human says it: its KEY (stable across reorders), with the id as a hint.
-const where = r => r.stationKey ? `${r.stationKey} (${r.station})` : r.station;
+// A station as a human says it: its KEY (stable across reorders), with its CURRENT id as a
+// hint, resolved in the deck now. The id recorded at write time may name another slide today.
+let deckStations = [];
+try { deckStations = S.stations(readFileSync(deck, 'utf8')); } catch {}
+function where(r) {
+  if (!r.stationKey) return r.station;
+  const s = S.findStation(deckStations, { stationKey: r.stationKey });
+  return s ? `${r.stationKey} (${s.id})` : `${r.stationKey} (not in the deck)`;
+}
 
 if (cmd === 'status') {
   const open = d.comments.filter(c => !c.resolved);

@@ -100,8 +100,11 @@ node components/edit/review.mjs deck/index.html resolve c3
   the deck itself, the page reloads on the same station, with edit mode still on.
 - `review.mjs` and the server never overwrite each other. Every write takes
   `index.review.json.lock` (created with O_EXCL, holding the writer's pid) and re-reads the
-  sidecar inside it. A lock whose process is gone, or that is older than 15 s, is broken; one
-  held longer than 5 s by a live process fails the write with a message naming the file.
+  sidecar inside it. A lock whose process is gone is broken; so is a pid-less lock older than
+  15 s, or one older than 10 minutes. Breakers take a second O_EXCL lock
+  (`index.review.json.lock.break`) and re-check the lock under it before removing it, so two
+  writers never hold the lock at once. A lock held longer than 5 s by a live process fails the
+  write with a message naming the file.
 - If the sidecar is not valid JSON (a hand edit gone wrong), nothing is written, not even a
   text edit to the deck. `review.mjs` exits with the parse error, `/__deck/state` carries it
   as `reviewError`, and the browser shows it in a toast that stays until the file is fixed.
@@ -114,9 +117,10 @@ node components/edit/review.mjs deck/index.html resolve c3
 Stations are recorded by **both** `station` (the id when it was written) and `stationKey` (the
 station's `data-key`, when it has one). Readers resolve **key first**, then id: ids are
 positional and may be renumbered, keys are not. A sidecar written before keys existed
-(`"station": "s3"` only) still resolves by id. Comment anchors root on `[data-key="…"]` when
+(`"station": "s3"` only) still resolves by id, and when the server starts it adds the key to
+any such record whose id still names a keyed station. Comment anchors root on `[data-key="…"]` when
 the station has a key, so a pin survives a reorder or a renumber. `review.mjs` prints stations
-as `ORION (s3)`.
+as `ORION (s3)`, where `s3` is the station's id in the deck NOW, not the one recorded.
 
 ```jsonc
 { "format": "deckadence-review/1", "deck": "index.html",
