@@ -33,7 +33,8 @@ this skill was distilled from the craft (and the bugs) of making that deck real.
   directions (Brutalist, Editorial, Terminal, Swiss, Playful, Midnight Luxe) based on your
   audience and mood — and tells you why.
 - ⌨️ **Presenter-grade navigation** — arrows/space, overview mode, clickable progress rail
-  with tooltips, `#s5` deep links for rehearsal, plus a ready pattern for auto-playing
+  with tooltips, stable station keys in the HUD (`LYRA · ON THE MAP`) that survive
+  reorders, `#LYRA` deep links for rehearsal, plus a ready pattern for auto-playing
   reels the presenter can take over (they stop at the end — they never loop over you).
 - 🪤 **The traps, pre-stepped-on** — mid-word line breaks, final-state flashes,
   reduced-motion killing the show, iframe `100vh` ballooning… eleven of them, documented,
@@ -95,7 +96,8 @@ open template/starter.html        # macOS
 start template\starter.html       # Windows
 ```
 
-`→` to advance · `O` for the overview · click the dots · add `#s3` to the URL to deep-link.
+`→` to advance · `O` for the overview · click the dots · add `#ORION` (a station
+key) or `#s3` to the URL to deep-link.
 
 ## Credits
 
