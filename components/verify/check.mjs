@@ -139,6 +139,12 @@ const missing = chrome.filter(([, test]) => !test());
 missing.forEach(([, , why]) => bad('device chrome:', why));
 if (!missing.length) ok('device chrome intact (full screen, swipe, mask, culling, rail window, phone CSS)');
 
+/* ---------- control-layer hooks (edit mode) ----------
+ * Not a failure: a deck without window.Deckadence still presents. It just cannot be edited
+ * in the browser (components/edit/, references/edit.md). */
+if (/window\.Deckadence\s*=/.test(js)) ok('edit-mode hooks present (window.Deckadence)');
+else console.log('  note: no window.Deckadence — edit mode (components/edit/serve.mjs) cannot drive this deck');
+
 /* ---------- CSS scoped to a station's POSITIONAL id ----------
  * `#s4 .bar {…}` breaks on reorder in two directions: the id moves away and the rule styles
  * nothing, or ANOTHER station inherits the number and the rule styles the wrong slide
