@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Deckadence still-mode screenshots — Tier 1 of references/pitfalls.md.
 #   components/verify/shoot.sh deck/index.html            # every station
-#   components/verify/shoot.sh deck/index.html s3 s7      # named stations only
+#   components/verify/shoot.sh deck/index.html s3 LYRA    # named stations only (id or data-key)
 #   DECK_SHOT=phone components/verify/shoot.sh deck/index.html   # phone landscape (also: ipad)
 # Writes .shots/<station-id>.png next to the deck (.shots/<preset>/ for phone/ipad), then
 # you READ the images. Decks get read on phones and iPads after the talk: shoot the phone

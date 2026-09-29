@@ -40,6 +40,18 @@ One idea per station. Map the talk's beats to stations first (titles only), get 
 sign-off on the sequence, then build. Use contrast inversion (light↔dark stations) to mark
 beat changes. Plan ONE spatial flourish (overview fly-through or dive) — not ten.
 
+**Give every station a KEY** (`data-key="LYRA"`) as you map it: a stable name from one fixed
+vocabulary (stars, colours, animals — the scheme matters less than the stability). Ids
+(`s1`, `s2` …) are positions and change on every insert and reorder; keys never do. The HUD
+shows `KEY · NAME`, `#LYRA` deep-links, and **keys, not numbers, are what you and the user
+say out loud in review** — "fix LYRA" still means the same slide after a reorder, while
+"fix slide 3" does not. The naming rule:
+
+- A slide that changes enough to be a **different slide gets a NEW key**. A renamed key then
+  signals the old version is dead, so a stale render identifies itself.
+- **Retired keys are never reused.**
+- **Reserve keys for stations not yet built**, so parallel work cannot collide.
+
 ### 3 · Lay out the staircase
 
 Stations advance DOWN or RIGHT only (monotone staircase; right = +2300, down = +1450).
@@ -58,13 +70,13 @@ placeholder look like finished copy.
 ### 5 · Verify by LOOKING, then hand over
 
 **Never declare a deck done that you have not seen rendered.** Serve it, screenshot every
-station with `?still=1#<id>`, and read the images — that flat mode exists because an animated
+station with `?still=1#<id>` (or `#<KEY>`), and read the images — that flat mode exists because an animated
 station shot mid-rise photographs as an empty frame and hides every layout bug. Then run the
 static gates and walk the deck with arrow keys for the motion. Full recipe and what headless
 can NOT tell you: `references/pitfalls.md`.
 
-Tell the user: arrows/Space navigate, `O` = overview, `F` = full screen, dots jump, `#sN`
-deep-links, swipe on phones/iPads, and to **vendor anime.js locally before show day**.
+Tell the user: arrows/Space navigate, `O` = overview, `F` = full screen, dots jump, `#KEY`
+(or `#sN`) deep-links, swipe on phones/iPads, and to **vendor anime.js locally before show day**.
 
 ### 6 · Review loop (edit mode)
 
@@ -101,6 +113,10 @@ reply (attach a `patch` so their Apply button makes the change). Full loop:
     stay in: keep `#fsbtn`/`#rotatehint` when you redesign the HUD, keep the `(pointer:
     coarse)` and phone-size media queries when you restyle, and shoot the `phone` preset
     before declaring done. Decks get read on phones after the talk.
+14. **Scope station CSS by key or class, NEVER by `#sN`.** Ids are positional: a reorder
+    renumbers them, and `#s4 .bar` silently styles nothing, or styles whichever station
+    inherited the number. Write `[data-key="LYRA"] .bar` (or a class the station carries).
+    `check.mjs` warns on any `#sN`-scoped rule and fails one that lands on another station.
 
 ## Reference map (read on demand)
 
