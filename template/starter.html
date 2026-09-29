@@ -124,6 +124,9 @@
   #hud .station-name { justify-self: end; min-width: 0; max-width: 100%; text-align: right;
                        overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
                        text-transform: uppercase; opacity: .5; }
+  /* KEY · NAME: the key is the stable name (it survives reorders), so it leads. An inline
+     span inside .station-name, so the column's ellipsis still trims the whole label. */
+  #hud .station-key { font-weight: 700; }
   #rail { justify-self: center; display: flex; gap: 10px; pointer-events: auto; }
   #rail .dot {
     width: 8px; height: 8px; border-radius: 50%;
@@ -143,6 +146,17 @@
     padding: 6px 12px; border-radius: 4px; opacity: 0; pointer-events: none; transition: opacity .25s;
   }
   #railtip.show { opacity: 1; }
+  /* overview labels: each keyed station's KEY floats above its frame on the plane, shown
+     only while the overview is up (body.is-overview). Sized in world px: the overview zoom
+     shrinks them along with everything else. */
+  .station-tag {
+    position: absolute; top: 0; left: 0; pointer-events: none; white-space: nowrap;
+    font-weight: 700; font-size: 84px; letter-spacing: .08em; line-height: 1;
+    text-transform: uppercase; color: var(--ink); opacity: 0; transition: opacity .4s ease;
+  }
+  .station-tag .tag-name { font-weight: 500; opacity: .45; }
+  body.invert-hud .station-tag { color: var(--bg); }
+  body.is-overview .station-tag { opacity: .7; }
   /* full-screen toggle: ALWAYS present (F key too). Sits in the HUD so it inherits the tone
      flip; the HUD is pointer-events:none, so the button opts back in. */
   #fsbtn {
@@ -213,22 +227,25 @@
   body.no-fullscreen #rotatehint .rh-fs { display: none; }
   body.no-fullscreen #rotatehint .rh-nofs { display: inline; }
 
-  /* ---------- per-station layout ---------- */
-  #s1 .eyebrow { margin-bottom: 50px; }
-  #s1 .credits { margin-top: 46px; font-size: 22px; color: var(--ink-soft);
+  /* ---------- per-station layout ----------
+     Scope a station's rules by its KEY (or a class it carries), NEVER by its #sN id.
+     Ids are positional: a reorder renumbers them, and a rule scoped to #s4 then silently
+     styles nothing, or styles whichever station inherited the number. Keys never move. */
+  [data-key="VEGA"] .eyebrow { margin-bottom: 50px; }
+  [data-key="VEGA"] .credits { margin-top: 46px; font-size: 22px; color: var(--ink-soft);
                  border-top: 1px solid var(--line); padding-top: 26px; max-width: 760px; }
 
-  #s4 .agenda { display: flex; flex-direction: column; gap: 34px; margin-top: 70px; max-width: 1100px; }
-  #s4 .agenda .item { display: flex; align-items: baseline; gap: 28px; font-size: 40px; font-weight: 600; }
-  #s4 .agenda .item .num { font-size: 20px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  [data-key="DENEB"] .agenda { display: flex; flex-direction: column; gap: 34px; margin-top: 70px; max-width: 1100px; }
+  [data-key="DENEB"] .agenda .item { display: flex; align-items: baseline; gap: 28px; font-size: 40px; font-weight: 600; }
+  [data-key="DENEB"] .agenda .item .num { font-size: 20px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   /* SVG diagram station: explicit width/height on the <svg> — a viewBox with no
      width/height renders huge and overflows its cell */
-  #s5 .diagram { margin-top: 60px; }
-  #s5 .node rect { fill: none; stroke: var(--bg); stroke-width: 2.5; }
-  #s5 .node text { fill: var(--bg); font-family: var(--font-body); font-size: 21px; font-weight: 600; letter-spacing: .04em; text-anchor: middle; }
-  #s5 .wire { fill: none; stroke: var(--bg); stroke-width: 2; opacity: .85; }
-  #s5 .pulse { fill: var(--accent); opacity: 0; }
+  [data-key="RIGEL"] .diagram { margin-top: 60px; }
+  [data-key="RIGEL"] .node rect { fill: none; stroke: var(--bg); stroke-width: 2.5; }
+  [data-key="RIGEL"] .node text { fill: var(--bg); font-family: var(--font-body); font-size: 21px; font-weight: 600; letter-spacing: .04em; text-anchor: middle; }
+  [data-key="RIGEL"] .wire { fill: none; stroke: var(--bg); stroke-width: 2; opacity: .85; }
+  [data-key="RIGEL"] .pulse { fill: var(--accent); opacity: 0; }
 </style>
 </head>
 <body>
@@ -240,25 +257,29 @@
          LAYOUT RULE (monotone staircase): each station moves PURE RIGHT
          (+2300, 0) or PURE DOWN (0, +1450) from the previous one — never
          up or left — so "next" always advances down/right.
-         Re-verify after every insert/remove (see references/engine.md). -->
+         Re-verify after every insert/remove (see references/engine.md).
+         IDENTITY: id="sN" is POSITIONAL (renumbered on reorder). data-key is the
+         station's STABLE name: shown in the HUD, deep-linkable as #KEY, and the only
+         safe CSS scope. A slide that changes into a different slide gets a NEW key;
+         retired keys are never reused. -->
 
-    <section class="station" id="s1" data-name="Title" data-x="0" data-y="0">
+    <section class="station" id="s1" data-key="VEGA" data-name="Title" data-x="0" data-y="0">
       <div class="eyebrow" data-fade>A talk by you</div>
       <h1 class="display" data-split="lines">Your big idea,<br>one line at a time</h1>
       <div class="credits" data-fade>Your Name — what you do</div>
     </section>
 
-    <section class="station" id="s2" data-name="The claim" data-x="2300" data-y="0">
+    <section class="station" id="s2" data-key="LYRA" data-name="The claim" data-x="2300" data-y="0">
       <h2 class="display mega" data-split="lines">Make one<br>claim <span class="accent">huge.</span></h2>
     </section>
 
-    <section class="station invert" id="s3" data-name="Inversion" data-x="2300" data-y="1450">
+    <section class="station invert" id="s3" data-key="ORION" data-name="Inversion" data-x="2300" data-y="1450">
       <div class="eyebrow" data-fade>Beat change</div>
       <h2 class="display" data-split="lines">Invert contrast<br>to mark a turn</h2>
       <p class="lead" data-fade>Use the inverted station as a rhythm device — a beat change or a key claim — not at random.</p>
     </section>
 
-    <section class="station" id="s4" data-name="Agenda" data-x="4600" data-y="1450">
+    <section class="station" id="s4" data-key="DENEB" data-name="Agenda" data-x="4600" data-y="1450">
       <div class="eyebrow" data-fade>How this works</div>
       <h2 class="display md" data-split="lines">Three moves</h2>
       <div class="agenda">
@@ -270,7 +291,7 @@
 
     <!-- A bespoke animated scene: data-scene="diagram" hands this station's
          reveal to the scene registry at the bottom of the file. -->
-    <section class="station invert" id="s5" data-name="Scene demo" data-x="4600" data-y="2900" data-scene="diagram">
+    <section class="station invert" id="s5" data-key="RIGEL" data-name="Scene demo" data-x="4600" data-y="2900" data-scene="diagram">
       <!-- no data-fade on this eyebrow: the scene animates it itself -->
       <div class="eyebrow">Bespoke scene</div>
       <h2 class="display sm" data-split="lines">Draw, then flow</h2>
@@ -285,7 +306,7 @@
       </svg>
     </section>
 
-    <section class="station" id="s6" data-name="Thanks" data-x="6900" data-y="2900">
+    <section class="station" id="s6" data-key="ALTAIR" data-name="Thanks" data-x="6900" data-y="2900">
       <h2 class="display" data-split="lines">Thank you</h2>
       <p class="lead" data-fade>← → navigate · O overview · F full screen · click a dot to jump</p>
     </section>
@@ -347,8 +368,19 @@
     el.style.transform = `translate(${x}px, ${y}px)`;       // place on the plane
     return { el, x, y, w: el.offsetWidth, h: el.offsetHeight, zoom,
              cx: x + el.offsetWidth / 2, cy: y + el.offsetHeight / 2,
-             name: el.dataset.name };
+             name: el.dataset.name, key: el.dataset.key || '' };
   });
+  // Deep-link resolution: `#s3` (positional id) or `#VEGA` (stable key, case-insensitive).
+  // The id wins on a clash; check.mjs fails a deck whose key could clash with an id.
+  function stationFromHash(h) {
+    let t = (h || '').replace(/^#/, '');
+    try { t = decodeURIComponent(t); } catch (e) {}
+    if (!t) return -1;
+    const byId = stations.findIndex(s => s.el.id === t);
+    if (byId >= 0) return byId;
+    const T = t.toUpperCase();
+    return stations.findIndex(s => s.key && s.key.toUpperCase() === T);
+  }
 
   const world = document.getElementById('world');
   const viewportEl = document.getElementById('viewport');
@@ -389,7 +421,7 @@
     d.addEventListener('click', () => { if (!busy && i !== cur) goto(i); });
     d.addEventListener('mouseenter', () => {
       const r = d.getBoundingClientRect();
-      railtip.textContent = String(i + 1).padStart(2, '0') + ' · ' + s.name;
+      railtip.textContent = [String(i + 1).padStart(2, '0'), s.key, s.name].filter(Boolean).join(' · ');
       railtip.style.left = (r.left + r.width / 2) + 'px';
       railtip.classList.add('show');
     });
@@ -397,6 +429,16 @@
     rail.appendChild(d);
   });
   const dots = Array.from(rail.children);
+  // Overview labels: the KEY (+ name, fainter) above each keyed station, on the plane.
+  // Siblings of the stations in #world, never children, so no intro or scene sees them.
+  stations.forEach(s => {
+    if (!s.key) return;
+    const t = document.createElement('div'); t.className = 'station-tag';
+    t.textContent = s.key;
+    if (s.name) { const n = document.createElement('span'); n.className = 'tag-name'; n.textContent = ' · ' + s.name; t.appendChild(n); }
+    t.style.transform = `translate(${s.x}px, ${s.y}px) translateY(-140%)`;
+    world.appendChild(t);
+  });
   document.getElementById('total').textContent = String(stations.length).padStart(2, '0');
   // The rail does not scale: one dot per station overflows into the HUD corners past ~25.
   // Window the dots around the current one, sized from the MEASURED HUD (a hardcoded count
@@ -432,9 +474,23 @@
   }
   function setHud(i) {
     document.getElementById('idx').textContent = String(i + 1).padStart(2, '0');
-    hud.querySelector('.station-name').textContent = stations[i].name;
+    // KEY · NAME when the station has a key (the stable name to say out loud in review);
+    // plain NAME otherwise, so keyless decks render exactly as before.
+    const label = hud.querySelector('.station-name'), s = stations[i];
+    label.textContent = s.name || '';
+    if (s.key) {
+      const k = document.createElement('span'); k.className = 'station-key'; k.textContent = s.key;
+      label.prepend(k, s.name ? ' · ' : '');
+    }
     dots.forEach((d, k) => d.classList.toggle('active', k === i));
     railWindow(i);
+  }
+  // Keep the URL on the current station, by KEY when it has one: a link copied mid-review
+  // then survives a reorder. replaceState (no history spam) never fires hashchange.
+  function syncHash(i) {
+    const s = stations[i], h = '#' + encodeURIComponent(s.key || s.el.id);
+    if (location.hash === h) return;
+    try { history.replaceState(null, '', location.pathname + location.search + h); } catch (e) {}
   }
   // TONE is separate from the HUD's text because it is VISIBLE DURING A FLY: the letterbox
   // bars paint the viewport background, and the HUD ink flips with them. Flipped at t=0 it
@@ -483,6 +539,7 @@
   }
   function toOverview() {
     overview = true; busy = true; unmask(); updateCulling();
+    document.body.classList.add('is-overview');
     const c = overviewCam();
     animate(cam, { x: c.x, y: c.y, zoom: c.zoom, duration: 1300 * MOTION, ease: EASE,
       onUpdate: render, onComplete: () => busy = false });
@@ -499,7 +556,8 @@
   function goto(i, opts) {
     if (i < 0 || i >= stations.length) return;
     const prev = cur; cur = i; overview = false;
-    setHud(i); updateCulling();
+    document.body.classList.remove('is-overview');
+    setHud(i); updateCulling(); syncHash(i);
     Object.values(sceneRegistry).forEach(sc => sc.stop());
     const s = stations[i], isNew = i !== prev;
     const token = ++navToken;
@@ -753,9 +811,25 @@
     else { const s = stations[cur]; cam.x = s.cx; cam.y = s.cy; cam.zoom = fitZoom(s); render(); maskToStation(s); }
   });
 
-  /* ---------- boot (supports #s3 deep links for rehearsal) ---------- */
-  const hashIdx = stations.findIndex(s => '#' + s.el.id === location.hash);
+  // Editing the hash on a loaded deck (#ORION, #s3) flies there. A hash that arrives while
+  // the camera is in flight is NOT dropped (the URL and the deck would then disagree): it is
+  // retried until the flight lands, re-reading the hash so the latest edit wins.
+  let hashRetry = 0;
+  function followHash() {
+    clearTimeout(hashRetry);
+    const i = stationFromHash(location.hash);
+    if (i < 0 || (i === cur && !overview)) return;
+    if (busy) { hashRetry = setTimeout(followHash, 120); return; }
+    goto(i);
+  }
+  window.addEventListener('hashchange', followHash);
+
+  /* ---------- boot (deep links for rehearsal: #s3 by position, #ORION by key) ---------- */
+  const hashIdx = stationFromHash(location.hash);
   const start = hashIdx >= 0 ? hashIdx : 0;
+  // Normalise a deep link to the station's KEY (#s3 → #ORION, #orion → #ORION), so the URL
+  // the reader copies is the stable one. Not in ?still=1: shoot.sh owns that URL.
+  if (hashIdx >= 0 && !STILL) syncHash(start);
   cur = start;
   cam.x = stations[start].cx; cam.y = stations[start].cy; cam.zoom = fitZoom(stations[start]);
   render();

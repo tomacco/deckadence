@@ -82,9 +82,70 @@ node components/verify/check.mjs deck/index.html    # after EVERY edit
 
 It gates the staircase plus the other things that fail silently — duplicate ids, an engine
 syntax error, a `data-scene` that is never registered, a `data-fly` the engine does not
-handle — and exits nonzero, so it can gate a commit. It FAILS loudly on zero parsed stations:
-a station the regex cannot read must never quietly pass. It cannot see layout overflow; that
-needs `components/verify/shoot.sh` and your eyes.
+handle, duplicate or unlinkable station keys, CSS that landed on the wrong station — and
+exits nonzero, so it can gate a commit. It FAILS loudly on zero parsed stations: a station
+the regex cannot read must never quietly pass. It cannot see layout overflow; that needs
+`components/verify/shoot.sh` and your eyes.
+
+## Station identity: keys, not numbers
+
+A station's `id="sN"` is **positional**: every insert and reorder renumbers it. That makes it
+a poor address for a deck under iteration — the reviewer is often looking at a render from
+before the last change, so "slide 3" means two different slides to the two people talking.
+
+So every station carries a **key**, a stable name that does not move:
+
+```html
+<section class="station" id="s4" data-key="LYRA" data-name="On the map" …>
+```
+
+- **Free-form, uppercase by convention**, one fixed vocabulary per deck (stars, colours,
+  animals, names). It must work as a URL fragment: letters, digits, `- _ . ~`.
+- The **HUD** renders `LYRA · ON THE MAP` (the key in a `.station-key` span inside
+  `.station-name`); a station without a key renders exactly as before. Rail tooltips and the
+  **overview** labels (`.station-tag`, shown only while `body.is-overview`) carry it too.
+- **Deep links:** `#LYRA` boots at that station (case-insensitive), as does `#s4`; editing
+  the hash on a loaded deck flies there (a hash edited mid-flight waits for the landing).
+  On boot and while navigating, the engine keeps the URL on the current station, **by key**
+  when it has one (`#s4` becomes `#LYRA`), so a copied link survives a reorder. `?still=1`
+  leaves a boot hash as given.
+- **Keys are what you say out loud in review.** "LYRA's chart is too small" stays true
+  across a reorder; "slide 4's chart" does not.
+
+**The naming rule** — without it a key drifts and becomes as unreliable as a number:
+
+1. If a slide changes enough that it is a **different slide, it gets a NEW key**. A renamed
+   key signals the old version is dead, so a stale deck identifies itself.
+2. **Retired keys are never reused.**
+3. **Reserve keys for stations not yet built**, so parallel work cannot collide.
+
+`check.mjs` warns on a station with no key, and FAILS on two stations sharing one, on a key
+shaped like a positional id (`S3`) or equal to a station id (the id would win the deep link),
+and on a key that is not a clean hash fragment.
+
+### Scope station CSS by key, never by id
+
+Because ids move, **a rule scoped to `#sN` breaks on reorder** — in two directions. The id
+moves away and the rule silently styles nothing; or an insert hands the freed id to a
+DIFFERENT station and one station's rules now style another (measured: 24 rules from one
+station landing on its neighbour, which presented as an overflow on a slide whose own CSS was
+fine). Scope by the key, or by a class the station carries:
+
+```css
+/* NO  */ #s4 .castor-bar            { fill: var(--accent); }
+/* YES */ [data-key="CASTOR"] .castor-bar { fill: var(--accent); }
+```
+
+`[data-key]` is class-level specificity, lower than an id: if a shared rule such as
+`.station.invert .eyebrow` now wins where `#s4 …` used to, raise the scoped rule to
+`.station[data-key="CASTOR"] …` rather than reaching for the id again. `check.mjs` warns on
+every rule scoped to a station id and FAILS a rule scoped to `#sN` whose classes only appear
+inside a different station's markup (the inverted case).
+
+Re-keying a station (the naming rule above) orphans its `[data-key="OLD"]` rules the same
+way, so **move the CSS with the key**. `check.mjs` FAILS any `[data-key="X"]` selector whose
+X no station carries, including a case-only mismatch: CSS attribute matching is
+case-sensitive even though `#key` deep links are not.
 
 ## Long decks: sections as territories (25+ stations)
 
@@ -143,10 +204,11 @@ the whole move it must dispatch the reveal and the tone flip itself — that is 
   it). Pinch-zoom is left to the browser; while zoomed in, swipes pan instead of navigating.
   `overscroll-behavior: none` so swipe-down is prev, not pull-to-refresh.
 - `busy` flag: input is ignored while the camera is in flight — prevents tween pile-ups.
-- **Deep links:** `#s5` in the URL boots at that station. Essential for rehearsal and for
-  automated verification. The boot path must run the station's scene (or intro) too — the
+- **Deep links:** `#LYRA` (a station key) or `#s5` (its position) in the URL boots at that
+  station; changing the hash later flies there. Essential for rehearsal and for automated
+  verification. Prefer the key: it survives a reorder. The boot path must run the station's scene (or intro) too — the
   template handles this.
-- `resize` handler refits the current station; HUD shows `current/total` + station name.
+- `resize` handler refits the current station; HUD shows `current/total` + `KEY · NAME`.
 
 ## Phones & iPads (in the template — keep it when you restyle)
 
@@ -199,5 +261,5 @@ self-contained decks):
 python -m http.server 8000 --bind 127.0.0.1   # then open /deck/index.html
 ```
 
-Rehearse with deep links (`#s7`). The presenter's pocket guide: arrows advance, `O` shows
+Rehearse with deep links (`#LYRA`, or `#s7`). The presenter's pocket guide: arrows advance, `O` shows
 the map, dots jump.

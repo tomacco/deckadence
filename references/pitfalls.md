@@ -89,6 +89,19 @@ Every trap here has actually bitten. Check this list before declaring a deck don
     touch; the reader is stuck. The `(pointer: coarse)` block sets `pointer-events: none`
     on station iframes — keep it, and on phones prefer a pre-rendered still to a live site
     (memory: live iframes are what kills the tab).
+19. **Station CSS scoped by `#sN` breaks on reorder.** Station ids are positional; a reorder
+    renumbers them. Every rule scoped to the old id silently stops matching and the station
+    renders unstyled — no gate sees it, because markup and CSS are both still valid. Worse,
+    it inverts: an insert hands the freed id to a DIFFERENT station, and one station's rules
+    now style its neighbour (measured on a 13 station deck: 24 rules pointing at the wrong
+    station, presenting as content overflowing a slide whose own CSS was fine). Do not chase
+    that as an overflow bug. **Scope station CSS by `[data-key="…"]` or a class the station
+    carries, never by its id.** `check.mjs` warns on every `#sN`-scoped rule and FAILS one
+    whose classes only exist in another station's markup.
+20. **Addressing slides by number in review.** "Slide 3" means two different slides to two
+    people looking at renders from either side of a reorder, and the fix lands on the wrong
+    slide. Say the station KEY (`LYRA`), shown in the HUD. A slide that became a different
+    slide gets a new key; retired keys are never reused (`engine.md`, Station identity).
 
 19. **Rail dots that drift between slides.** A HUD laid out as a `space-between` flex row puts
     the rail wherever the (per-slide) station name leaves it — the same pixel becomes a
@@ -109,8 +122,10 @@ screenshot. Three tiers, cheapest first.
 node components/verify/check.mjs deck/index.html
 ```
 
-Staircase · duplicate ids · engine syntax · `data-scene` registered · `data-fly` handled ·
-unstyled classes. Exits nonzero, so it can gate a commit. What it cannot do is arithmetic on
+Staircase · duplicate ids · station keys (missing = WARN; duplicate, `sN`-shaped or not a
+clean hash fragment = FAIL) · engine syntax · `data-scene` registered · `data-fly` handled ·
+device chrome · CSS scoped to a station id (WARN; FAIL when it lands on another station) ·
+`[data-key]` selectors naming no station (FAIL — a re-key orphans them) · unstyled classes. Exits nonzero on any FAIL, so it can gate a commit; WARN lines do not. What it cannot do is arithmetic on
 your layout: sum a station's content heights against the usable frame height yourself — a
 station that overflows 1080 px is a guaranteed visual bug findable without a browser.
 
@@ -141,7 +156,8 @@ browser by hand:
   `%LOCALAPPDATA%\Temp` and copy the PNG back into Linux to read it. Killing strays with
   `pkill -f msedge` also matches the invoking script's own command line; match on
   `msedge.exe --headless` instead.
-- Shoot by **station id** (`#s3`), never by index — indices shift on every insert.
+- Shoot by **station id** (`#s3`) or, better, **key** (`#LYRA`), never by index — indices
+  shift on every insert, and ids with them; keys do not.
 - Shoot the **`DECK_SHOT=phone`** preset (844×390) as well: the letterbox mask, the windowed
   rail and the phone-size HUD only exist at that size, and a HUD that overflows a phone is
   invisible in a 1600×1000 shot. `ipad` (1180×820) for the 4:3 case.
@@ -157,8 +173,9 @@ cannot verify choreography. Drive the browser over CDP (Node ≥ 22 has global
 - Dispatch synthetic `KeyboardEvent`s to test navigation.
 - Subscribe to `Runtime.exceptionThrown` — a silent JS error usually means a dead scene.
 
-Gotchas: navigating to a hash-only URL on an already-loaded page does NOT re-run boot — use
-a fresh launch or `Page.reload`. Screenshot output paths must be ABSOLUTE.
+Gotchas: navigating to a hash-only URL on an already-loaded page does NOT re-run boot — the
+template's `hashchange` handler flies there instead (animated, and ignored while `busy`); for
+a clean boot-path test use a fresh launch or `Page.reload`. Screenshot output paths must be ABSOLUTE.
 
 **What headless CANNOT tell you** — do not read these as defects, and do not "fix" them:
 a presenter-stepped station correctly renders as heading-only at rest; transitions and
@@ -167,6 +184,6 @@ beats, and WebGL in a real browser, live.
 
 **Pre-show checklist:** vendored fonts + anime.js (no network) · full keyboard pass ·
 overview (`O`) looks intentional · letterbox tone correct on a non-16:9 window · full-screen
-button present and `F` works · deep-link boot works on the first AND last stations · every
+button present and `F` works · deep-link boot works on the first AND last stations (by key) · every
 station shot in `?still=1` and LOOKED at, desktop AND `phone` preset · `check.mjs` reports
 "device chrome intact" · presenter knows: arrows, O, F, dots; readers know: swipe.

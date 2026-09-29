@@ -26,7 +26,7 @@ COMPONENT · WHAT · SPLICE (where in the single file) · NEEDS (globals it expe
 
 | Path | Use when |
 |---|---|
-| `verify/check.mjs` | after EVERY edit — static gates (staircase, ids, syntax, scene wiring) |
+| `verify/check.mjs` | after EVERY edit — static gates (staircase, ids, station keys, id-scoped CSS, syntax, scene wiring) |
 | `verify/shoot.sh` | before declaring done — still-mode screenshot per station (`DECK_SHOT=phone` / `ipad` presets) |
 | `scenes/reveal.js` | a station should hold a question, then reveal the answer on the presenter's key |
 | `addons/fly-through-overview.js` | one station arrives via the map (the deck's single flourish) |
