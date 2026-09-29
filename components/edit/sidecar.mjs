@@ -14,8 +14,9 @@
 //                 before, after }
 // Resolved comments STAY (resolved:true) — the review history of a deck is not thrown away.
 
-import { readFileSync, writeFileSync, renameSync, existsSync, openSync, writeSync, closeSync, unlinkSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, openSync, writeSync, closeSync, unlinkSync, statSync, linkSync } from 'node:fs';
 import { basename } from 'node:path';
+import { randomBytes } from 'node:crypto';
 
 export const FORMAT = 'deckadence-review/1';
 export const sidecarPath = deck => deck.replace(/\.html?$/i, '') + '.review.json';
@@ -40,7 +41,10 @@ export function load(deck) {
  * Every write goes through withLock(): an O_EXCL lock file next to the sidecar, holding the
  * writer's pid. Inside the lock the sidecar is READ AGAIN, so a change is always applied to
  * the latest file, never to a copy loaded before someone else saved. A lock whose pid is dead,
- * or older than STALE_MS, is broken (a crashed writer never blocks the deck for good). */
+ * or older than STALE_MS, is broken (a crashed writer never blocks the deck for good).
+ * Breaking is race-safe: the stale lock is RENAMED aside (only one breaker can win that) and
+ * re-checked there; a lock that turns out to be live is put back with link(), which never
+ * overwrites. A writer removes the lock on exit only if it still holds ITS token. */
 export const lockPath = deck => sidecarPath(deck) + '.lock';
 const STALE_MS = 15000, WAIT_MS = 5000;
 const nap = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -52,20 +56,26 @@ function stale(p) {
     return pid > 0 && pid !== process.pid && !alive(pid);
   } catch { return false; }   // it vanished: just retry
 }
+function breakStale(p) {
+  const aside = `${p}.${process.pid}.${randomBytes(3).toString('hex')}.stale`;
+  try { renameSync(p, aside); } catch { return; }            // someone else broke (or released) it
+  if (!stale(aside)) { try { linkSync(aside, p); } catch {} } // it was live after all: put it back
+  try { unlinkSync(aside); } catch {}
+}
 export function withLock(deck, fn) {
-  const p = lockPath(deck), t0 = Date.now();
+  const p = lockPath(deck), t0 = Date.now(), token = `${process.pid} ${randomBytes(6).toString('hex')}\n`;
   let fd;
   for (;;) {
     try { fd = openSync(p, 'wx'); break; }
     catch (e) {
       if (e.code !== 'EEXIST') throw e;
-      if (stale(p)) { try { unlinkSync(p); } catch {} continue; }
+      if (stale(p)) { breakStale(p); continue; }
       if (Date.now() - t0 > WAIT_MS) throw new Error(`${basename(p)} is held by another writer — if no serve.mjs or review.mjs is running, delete it`);
       nap(10);
     }
   }
-  try { writeSync(fd, `${process.pid}\n`); closeSync(fd); return fn(); }
-  finally { try { unlinkSync(p); } catch {} }
+  try { writeSync(fd, token); closeSync(fd); return fn(); }
+  finally { try { if (readFileSync(p, 'utf8') === token) unlinkSync(p); } catch {} }
 }
 /** Locked read-modify-write: fn(freshData) mutates it; saved unless fn returns false. */
 export function update(deck, fn) {
@@ -74,9 +84,9 @@ export function update(deck, fn) {
 
 /** Atomic: write a temp file next to it, then rename — a reader never sees half a file. */
 export function writeAtomic(path, text) {
-  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmp, text);
-  renameSync(tmp, path);
+  const tmp = `${path}.${process.pid}.${Date.now()}.${randomBytes(3).toString('hex')}.tmp`;
+  try { writeFileSync(tmp, text); renameSync(tmp, path); }
+  catch (e) { try { unlinkSync(tmp); } catch {} throw e; }   // never leave a .tmp behind
 }
 
 export function save(deck, data) {

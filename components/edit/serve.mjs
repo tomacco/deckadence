@@ -58,7 +58,7 @@ function state() {
   try { review = R.load(DECK); }
   catch (e) { reviewError = e.message; review = { format: R.FORMAT, deck: PAGE, comments: [], edits: [] }; }
   return { deck: PAGE, author: AUTHOR, version: hash(html),
-           order: S.stations(html, tree).map(s => ({ id: s.id, name: s.name })),
+           order: S.stations(html, tree).map(s => ({ id: s.id, key: s.key, name: s.name })),
            map: S.editMap(html, tree), review, reviewError };
 }
 
@@ -71,7 +71,7 @@ const actions = {
     if (r.error) return { status: r.status || 422, body: { error: r.error } };
     if (r.unchanged) return { body: { ok: true, unchanged: true } };
     d.edits.push({ id: R.nextId('e', d.edits), kind: 'text', at: R.now(), author: AUTHOR, station: r.station,
-                   key: b.key, selector: b.selector || null, before: r.before, after: r.after });
+                   ...(r.stationKey ? { stationKey: r.stationKey } : {}), key: b.key, selector: b.selector ? String(b.selector) : null, before: r.before, after: r.after });
     commit(d, r.html, html);
     return { body: { ok: true, html: r.after, version: hash(r.html) } };
   }),
@@ -81,14 +81,19 @@ const actions = {
     const r = S.reorder(html, Array.isArray(b.order) ? b.order : []);
     if (r.error) return { status: 422, body: { error: r.error } };
     if (r.before.join() === r.after.join()) return { body: { ok: true, unchanged: true } };
-    d.edits.push({ id: R.nextId('e', d.edits), kind: 'reorder', at: R.now(), author: AUTHOR, before: r.before, after: r.after });
+    d.edits.push({ id: R.nextId('e', d.edits), kind: 'reorder', at: R.now(), author: AUTHOR, before: r.before, after: r.after,
+                   ...(r.keyed ? { beforeKeys: r.beforeKeys, afterKeys: r.afterKeys } : {}) });
     commit(d, r.html, html);
     return { body: { ok: true } };
   }),
-  // { station, at:{x,y}, anchor:{selector,text}, text }
+  // { station, stationKey?, at:{x,y}, anchor:{selector,text}, text } — the station is looked
+  // up in the deck on disk and recorded by BOTH its id and its data-key (the key is the
+  // address that survives a reorder; the id keeps old tools and keyless decks working).
   comment: b => locked(d => {
     if (!b.station || !String(b.text || '').trim()) return { status: 422, body: { error: 'a comment needs a station and text' } };
-    const c = { id: R.nextId('c', d.comments), station: String(b.station),
+    const st = S.findStation(S.stations(readDeck()), { station: String(b.station), stationKey: b.stationKey ? String(b.stationKey) : null });
+    if (!st) return { status: 422, body: { error: `no station ${b.stationKey || b.station} in the deck` } };
+    const c = { id: R.nextId('c', d.comments), station: st.id, ...(st.key ? { stationKey: st.key } : {}),
                 at: { x: Math.round(+b.at?.x || 0), y: Math.round(+b.at?.y || 0) },
                 anchor: b.anchor && b.anchor.selector ? { selector: String(b.anchor.selector), text: String(b.anchor.text || '').slice(0, 120),
                   ...(b.anchor.offset ? { offset: { x: +b.anchor.offset.x || 0, y: +b.anchor.offset.y || 0 } } : {}) } : null,
@@ -128,12 +133,14 @@ const actions = {
     const patch = f.reply.proposal.patch;
     if (b.choice === 'apply' && patch && typeof patch.find === 'string') {
       prev = readDeck();
-      const r = S.applyPatch(prev, patch.station || f.comment.station, patch.find, patch.replace ?? '');
+      // patch.station (an id OR a key) retargets it; otherwise the comment's station, by key first
+      const ref = patch.station || patch.stationKey ? { station: patch.station, stationKey: patch.stationKey } : f.comment;
+      const r = S.applyPatch(prev, ref, patch.find, patch.replace ?? '');
       if (r.error) { dec.applied = false; dec.error = r.error; }
       else {
         html = r.html; dec.applied = true; reload = true;
-        d.edits.push({ id: R.nextId('e', d.edits), kind: 'patch', at: R.now(), author: AUTHOR, station: patch.station || f.comment.station,
-                       reply: f.reply.id, before: patch.find, after: patch.replace ?? '' });
+        d.edits.push({ id: R.nextId('e', d.edits), kind: 'patch', at: R.now(), author: AUTHOR, station: r.station.id,
+                       ...(r.station.key ? { stationKey: r.station.key } : {}), reply: f.reply.id, before: patch.find, after: patch.replace ?? '' });
       }
     }
     f.reply.decision = dec;
@@ -229,7 +236,7 @@ function handle(req, res) {
     return res.end(readFileSync(join(HERE, basename(p))));
   }
   if (p === '/') { res.writeHead(302, { Location: '/' + encodeURIComponent(PAGE) + url.search }); return res.end(); }
-  // Static: the deck's folder, minus anything hidden (.git, .env, the sidecar's lock...).
+  // Static: the deck's folder, minus dotfiles and dot-directories (.git, .env, ...).
   if (p.split('/').some(seg => seg.startsWith('.'))) { res.writeHead(404); return res.end('not found'); }
   const file = resolve(ROOT, '.' + p);
   if (file !== ROOT && !file.startsWith(ROOT + sep)) { res.writeHead(403); return res.end(); }
