@@ -103,6 +103,13 @@ Every trap here has actually bitten. Check this list before declaring a deck don
     slide. Say the station KEY (`LYRA`), shown in the HUD. A slide that became a different
     slide gets a new key; retired keys are never reused (`engine.md`, Station identity).
 
+19. **Rail dots that drift between slides.** A HUD laid out as a `space-between` flex row puts
+    the rail wherever the (per-slide) station name leaves it — the same pixel becomes a
+    different dot on the next slide. Keep the `1fr auto 1fr` grid. To verify, step through
+    every station and compare each dot's CENTRE (`getBoundingClientRect` left + width/2) —
+    not the span of rail ink: the active dot's `scale(1.35)` widens its own box by a pixel
+    or two, and a span measurement reports that as drift.
+
 ## Verifying an animated deck (do this — don't ship blind)
 
 **Never declare a visual artifact done without having SEEN it.** Layout bugs — overflowing
