@@ -101,9 +101,15 @@ overview should read as a map of the talk.
   and a bad accident — decide it on purpose, and write down that you did.
 - **The HUD rail does not scale — so the engine windows it.** One dot per station would
   overflow into the HUD corners past ~25; `railWindow()` (in the template) shows a window of
-  dots around the current one and tapers the ends, sized from the measured gap between the
-  counter and the station name, not a hardcoded count. If you restyle `#rail`, keep the
-  `.out` / `.edge` rules; the window reads dot size and gap from the computed CSS.
+  dots around the current one and tapers the ends, sized from the measured HUD width, not a
+  hardcoded count. If you restyle `#rail`, keep the `.out` / `.edge` rules; the window reads
+  dot size and gap from the computed CSS.
+- **The HUD is a `1fr auto 1fr` grid, never a `space-between` flex row.** Equal outer columns
+  pin the rail to the viewport centre, so a dot stays under the presenter's cursor from slide
+  to slide; flexed, the rail slides with every change of station-name width and a click lands
+  on the wrong dot. The name column ellipsizes (`min-width:0`), so long `KEY · NAME` labels
+  are fine. `railWindow()` budgets the rail as the inner width minus two `column-gap`s minus
+  two copies of max(counter width, a readable name minimum).
 
 ## Camera moves
 
