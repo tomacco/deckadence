@@ -6,7 +6,7 @@
 // Checks: station parse · monotone staircase · duplicate ids · station keys (data-key) ·
 //         engine syntax · scenes used vs registered · data-fly values vs handled · device
 //         chrome (full screen, swipe, mask, culling, rail window, phone CSS) · CSS scoped
-//         to a positional #sN id · unstyled classes.
+//         to a positional #sN id · [data-key] selectors naming no station · unstyled classes.
 // FAIL lines gate (exit 1); WARN lines are reported and do not.
 // It cannot check layout OVERFLOW — that needs a screenshot (components/verify/shoot.sh).
 
@@ -29,8 +29,13 @@ const markup = html.replace(/<script[\s\S]*?<\/script>/g, '<script></script>');
 const js = scripts.join('\n');
 
 /* ---------- stations ---------- */
-const tags = [...markup.matchAll(/<section\b[^>]*\bclass="[^"]*\bstation\b[^"]*"[^>]*>/g)].map(m => m[0]);
-const attr = (tag, n) => { const a = tag.match(new RegExp(`\\b${n}="([^"]*)"`)); return a ? a[1] : null; };
+// Attribute values may be "double" or 'single' quoted; both are valid HTML.
+const STATION_TAG = /<section\b[^>]*\bclass=(?:"[^"]*\bstation\b[^"]*"|'[^']*\bstation\b[^']*')[^>]*>/g;
+const tags = [...markup.matchAll(STATION_TAG)].map(m => m[0]);
+const attr = (tag, n) => {
+  const a = tag.match(new RegExp(`(?:^|\\s)${n}=(?:"([^"]*)"|'([^']*)')`));
+  return a ? (a[1] ?? a[2]) : null;
+};
 const stations = tags.map(t => ({
   tag: t, id: attr(t, 'id'), name: attr(t, 'data-name'), key: attr(t, 'data-key'),
   x: Number(attr(t, 'data-x')), y: Number(attr(t, 'data-y')),
@@ -58,7 +63,7 @@ for (let i = 1; i < stations.length; i++) {
 if (stair && stations.length > 1) ok('staircase monotone');
 
 /* ---------- duplicate ids (whole document) ---------- */
-const ids = [...markup.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]);
+const ids = [...markup.matchAll(/\sid=(?:"([^"]+)"|'([^']+)')/g)].map(m => m[1] ?? m[2]);
 const dups = [...new Set(ids.filter((v, i) => ids.indexOf(v) !== i))];
 dups.length ? bad('duplicate ids:', dups.join(', ')) : ok('no duplicate ids');
 
@@ -141,38 +146,64 @@ if (!missing.length) ok('device chrome intact (full screen, swipe, mask, culling
  * Any station-id scope is a WARN; a scope whose classes only exist inside a DIFFERENT
  * station's markup is the inverted case, and FAILS. Scope by [data-key="…"] instead. */
 const stationBody = [];            // each station's own markup, <section …> to its </section>
-for (const m of markup.matchAll(/<section\b[^>]*\bclass="[^"]*\bstation\b[^"]*"[^>]*>/g)) {
+for (const m of markup.matchAll(STATION_TAG)) {
   const re = /<(\/?)section\b[^>]*>/g; re.lastIndex = m.index + m[0].length;
   let depth = 1, end = markup.length, t;
   while ((t = re.exec(markup))) { depth += t[1] ? -1 : 1; if (!depth) { end = t.index; break; } }
   stationBody.push(markup.slice(m.index, end));
 }
-const classesIn = src => new Set([...src.matchAll(/\bclass="([^"]+)"/g)].flatMap(m => m[1].split(/\s+/).filter(Boolean)));
+const classesIn = src => new Set([...src.matchAll(/\sclass=(?:"([^"]+)"|'([^']+)')/g)]
+  .flatMap(m => (m[1] ?? m[2]).split(/\s+/).filter(Boolean)));
 const stationClasses = stationBody.map(classesIn);
 const stationAt = new Map(stations.map((s, i) => [s.id, i]));
 const who = s => s.key ? `${s.id} (${s.key})` : s.id;
+// Statement at-rules (@import url(x); @charset "…"; @layer a, b;) have no block: stripped, or
+// they would glue onto the NEXT rule's prelude, which then starts with "@" and is skipped.
 const css = [...markup.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]).join('\n')
-  .replace(/\/\*[\s\S]*?\*\//g, '');
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/@[^{};]*;/g, '');
+// Split a selector list on TOP-LEVEL commas only: `:is(#s1, #s2) .x` is ONE selector.
+function splitSelectors(prelude) {
+  const out = []; let depth = 0, cur = '', q = null;
+  for (const ch of prelude) {
+    if (q) { if (ch === q) q = null; }
+    else if (ch === '"' || ch === "'") q = ch;
+    else if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth--;
+    else if (ch === ',' && !depth) { out.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  out.push(cur);
+  return out.map(s => s.trim().replace(/\s+/g, ' ')).filter(Boolean);
+}
 const idScoped = new Map();        // id -> [selectors]
 const crossed = new Set();
+const keySels = [];                // [data-key="X"] values used in CSS: [value, selector, i-flag]
 for (const m of css.matchAll(/([^{}]+)\{/g)) {                 // rule preludes, @media bodies too
   const prelude = m[1].trim();
   if (!prelude || prelude.startsWith('@')) continue;
-  for (const raw of prelude.split(',')) {
-    const sel = raw.trim().replace(/\s+/g, ' ');
-    for (const [, id] of sel.matchAll(/#(-?[_a-zA-Z][\w-]*)/g)) {
-      const i = stationAt.get(id);
-      if (i === undefined && !/^s\d+$/.test(id)) continue;    // chrome (#hud, #rail, …) is fine
+  for (const sel of splitSelectors(prelude)) {
+    for (const [, v1, v2, v3, flag] of sel.matchAll(/\[\s*data-key\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s\]]+))\s*([iIsS])?\s*\]/g))
+      keySels.push([v1 ?? v2 ?? v3, sel, /i/i.test(flag || '')]);
+    // Ids and classes are read with attribute selectors blanked: `a[href="#s2"]` is no id scope.
+    const bare = sel.replace(/\[(?:[^\]"']|"[^"]*"|'[^']*')*\]/g, '[]');
+    const scopedIds = [...bare.matchAll(/#(-?[_a-zA-Z][\w-]*)/g)].map(x => x[1])
+      .filter(id => stationAt.has(id) || /^s\d+$/.test(id));    // chrome (#hud, #rail, …) is fine
+    for (const id of scopedIds) {
       if (!idScoped.has(id)) idScoped.set(id, []);
       idScoped.get(id).push(sel);
-      if (i === undefined) continue;                            // dangling: reported below
-      for (const [, c] of sel.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) {
-        if (stationClasses[i].has(c)) continue;                 // the station's own markup
-        const owners = stations.filter((o, k) => k !== i && stationClasses[k].has(c));
-        const msg = `CSS "${sel}" is scoped to #${id} = ${who(stations[i])}, but .${c} only appears in ` +
-          owners.map(who).join(', ') + ' — this rule is styling the wrong station (a reorder moved the id)';
-        if (owners.length && !crossed.has(msg)) { crossed.add(msg); bad(msg); }
-      }
+    }
+    // Cross-station check only when the selector names exactly ONE station: `:is(#s1, #s2)`
+    // legitimately reaches classes in either, and is reported by the WARN below.
+    const i = scopedIds.length === 1 ? stationAt.get(scopedIds[0]) : undefined;
+    if (i === undefined) continue;                              // none, several, or dangling
+    for (const [, c] of bare.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) {
+      if (stationClasses[i].has(c)) continue;                   // the station's own markup
+      const owners = stations.filter((o, k) => k !== i && stationClasses[k].has(c));
+      const msg = `CSS "${sel}" is scoped to #${scopedIds[0]} = ${who(stations[i])}, but .${c} is not in this ` +
+        `station's markup; it appears only in ${owners.map(who).join(', ')} — the rule is dead here or ` +
+        'leaking onto the wrong station (a reorder moved the id)';
+      if (owners.length && !crossed.has(msg)) { crossed.add(msg); bad(msg); }
     }
   }
 }
@@ -183,6 +214,29 @@ for (const [id, sels] of idScoped) {
     `scope by [data-key="${stations[i].key || 'KEY'}"] or a class the station carries`);
 }
 if (!idScoped.size) ok('no CSS scoped to a positional station id');
+
+/* ---------- CSS scoped to a key no station has ----------
+ * Re-keying a station (the naming rule: a different slide gets a NEW key) silently orphans
+ * every `[data-key="OLD"]` rule — the #sN bug again, one step later. FAIL, not WARN: unlike
+ * an id scope, a key selector has no legitimate reason to name a key no station carries (a
+ * reserved key has no markup to style yet). CSS attribute matching is CASE-SENSITIVE while
+ * deep links are not, so `[data-key="lyra"]` against data-key="LYRA" fails too (unless the
+ * selector carries the `i` flag). */
+const keySet = new Set(stations.map(s => s.key).filter(Boolean));
+const keyUpper = new Map(stations.filter(s => s.key).map(s => [s.key.toUpperCase(), s]));
+const orphanSeen = new Set();
+for (const [v, sel, ci] of keySels) {
+  if (keySet.has(v) || orphanSeen.has(sel + '\0' + v)) continue;
+  orphanSeen.add(sel + '\0' + v);
+  const near = keyUpper.get(v.toUpperCase());
+  if (near && ci) continue;
+  if (near) bad(`CSS "${sel}" targets data-key "${v}", but the station key is "${near.key}" (${near.id}) —`,
+    'CSS attribute matching is case-sensitive, so this rule styles nothing');
+  else bad(`CSS "${sel}" targets data-key "${v}", which no station has — it styles nothing`,
+    '(re-keyed or retired? move the rule to the new key, or delete it)');
+}
+if (keySels.length && [...keySels].every(([v, , ci]) => keySet.has(v) || (ci && keyUpper.has(v.toUpperCase()))))
+  ok(`every [data-key] selector matches a station (${new Set(keySels.map(k => k[0])).size} keys)`);
 
 /* ---------- classes used but never styled ---------- */
 const styled = new Set();

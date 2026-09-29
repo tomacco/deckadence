@@ -811,15 +811,25 @@
     else { const s = stations[cur]; cam.x = s.cx; cam.y = s.cy; cam.zoom = fitZoom(s); render(); maskToStation(s); }
   });
 
-  // Editing the hash on a loaded deck (#ORION, #s3) flies there.
-  window.addEventListener('hashchange', () => {
+  // Editing the hash on a loaded deck (#ORION, #s3) flies there. A hash that arrives while
+  // the camera is in flight is NOT dropped (the URL and the deck would then disagree): it is
+  // retried until the flight lands, re-reading the hash so the latest edit wins.
+  let hashRetry = 0;
+  function followHash() {
+    clearTimeout(hashRetry);
     const i = stationFromHash(location.hash);
-    if (i >= 0 && (i !== cur || overview) && !busy) goto(i);
-  });
+    if (i < 0 || (i === cur && !overview)) return;
+    if (busy) { hashRetry = setTimeout(followHash, 120); return; }
+    goto(i);
+  }
+  window.addEventListener('hashchange', followHash);
 
   /* ---------- boot (deep links for rehearsal: #s3 by position, #ORION by key) ---------- */
   const hashIdx = stationFromHash(location.hash);
   const start = hashIdx >= 0 ? hashIdx : 0;
+  // Normalise a deep link to the station's KEY (#s3 → #ORION, #orion → #ORION), so the URL
+  // the reader copies is the stable one. Not in ?still=1: shoot.sh owns that URL.
+  if (hashIdx >= 0 && !STILL) syncHash(start);
   cur = start;
   cam.x = stations[start].cx; cam.y = stations[start].cy; cam.zoom = fitZoom(stations[start]);
   render();

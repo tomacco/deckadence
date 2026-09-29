@@ -125,7 +125,7 @@ node components/verify/check.mjs deck/index.html
 Staircase · duplicate ids · station keys (missing = WARN; duplicate, `sN`-shaped or not a
 clean hash fragment = FAIL) · engine syntax · `data-scene` registered · `data-fly` handled ·
 device chrome · CSS scoped to a station id (WARN; FAIL when it lands on another station) ·
-unstyled classes. Exits nonzero on any FAIL, so it can gate a commit; WARN lines do not. What it cannot do is arithmetic on
+`[data-key]` selectors naming no station (FAIL — a re-key orphans them) · unstyled classes. Exits nonzero on any FAIL, so it can gate a commit; WARN lines do not. What it cannot do is arithmetic on
 your layout: sum a station's content heights against the usable frame height yourself — a
 station that overflows 1080 px is a guaranteed visual bug findable without a browser.
 

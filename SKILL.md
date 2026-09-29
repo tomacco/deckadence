@@ -37,7 +37,8 @@ template defaults.
 ### 2 · Structure the narrative
 
 One idea per station. Map the talk's beats to stations first (titles only), get the user's
-sign-off on the sequence, then build.
+sign-off on the sequence, then build. Use contrast inversion (light↔dark stations) to mark
+beat changes. Plan ONE spatial flourish (overview fly-through or dive) — not ten.
 
 **Give every station a KEY** (`data-key="LYRA"`) as you map it: a stable name from one fixed
 vocabulary (stars, colours, animals — the scheme matters less than the stability). Ids
@@ -49,8 +50,7 @@ say out loud in review** — "fix LYRA" still means the same slide after a reord
 - A slide that changes enough to be a **different slide gets a NEW key**. A renamed key then
   signals the old version is dead, so a stale render identifies itself.
 - **Retired keys are never reused.**
-- **Reserve keys for stations not yet built**, so parallel work cannot collide. Use contrast inversion (light↔dark stations) to mark
-beat changes. Plan ONE spatial flourish (overview fly-through or dive) — not ten.
+- **Reserve keys for stations not yet built**, so parallel work cannot collide.
 
 ### 3 · Lay out the staircase
 

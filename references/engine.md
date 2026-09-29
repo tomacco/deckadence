@@ -105,8 +105,10 @@ So every station carries a **key**, a stable name that does not move:
   `.station-name`); a station without a key renders exactly as before. Rail tooltips and the
   **overview** labels (`.station-tag`, shown only while `body.is-overview`) carry it too.
 - **Deep links:** `#LYRA` boots at that station (case-insensitive), as does `#s4`; editing
-  the hash on a loaded deck flies there. While navigating, the engine keeps the URL on the
-  current station, **by key** when it has one, so a copied link survives a reorder.
+  the hash on a loaded deck flies there (a hash edited mid-flight waits for the landing).
+  On boot and while navigating, the engine keeps the URL on the current station, **by key**
+  when it has one (`#s4` becomes `#LYRA`), so a copied link survives a reorder. `?still=1`
+  leaves a boot hash as given.
 - **Keys are what you say out loud in review.** "LYRA's chart is too small" stays true
   across a reorder; "slide 4's chart" does not.
 
@@ -139,6 +141,11 @@ fine). Scope by the key, or by a class the station carries:
 `.station[data-key="CASTOR"] …` rather than reaching for the id again. `check.mjs` warns on
 every rule scoped to a station id and FAILS a rule scoped to `#sN` whose classes only appear
 inside a different station's markup (the inverted case).
+
+Re-keying a station (the naming rule above) orphans its `[data-key="OLD"]` rules the same
+way, so **move the CSS with the key**. `check.mjs` FAILS any `[data-key="X"]` selector whose
+X no station carries, including a case-only mismatch: CSS attribute matching is
+case-sensitive even though `#key` deep links are not.
 
 ## Long decks: sections as territories (25+ stations)
 
