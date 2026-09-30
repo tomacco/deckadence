@@ -1,0 +1,51 @@
+# Regression tests for the skill: static gates, edit mode, and the real-browser flash probe.
+# Zero dependencies: node's built-in test runner + the repo's own tools. Run locally with
+#   node --test tests/*.test.mjs
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: gates + edit mode · node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+      - name: shell syntax
+        run: bash -n components/verify/shoot.sh
+      - name: static gates, edit source, edit server
+        run: node --test tests/gates.test.mjs tests/source.test.mjs tests/edit-server.test.mjs
+
+  browser:
+    name: browser · flash probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REQUIRE_BROWSER: '1'   # a missing Chrome fails the job instead of skipping the tests
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: google-chrome --version
+      - name: flash probe on the template and the landing, and on a deliberately broken engine
+        run: node --test tests/browser.test.mjs
