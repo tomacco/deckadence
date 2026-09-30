@@ -5,7 +5,8 @@
 //
 // Checks: station parse · monotone staircase · duplicate ids · station keys (data-key) ·
 //         engine syntax · scenes used vs registered · data-fly values vs handled · device
-//         chrome (full screen, swipe, mask, culling, rail window, phone CSS) · CSS scoped
+//         chrome (full screen, swipe, mask, culling, rail window, phone CSS) · flash guard
+//         (primeStation in goto, prep(el) on every scene) · CSS scoped
 //         to a positional #sN id · [data-key] selectors naming no station · unstyled classes.
 // FAIL lines gate (exit 1); WARN lines are reported and do not.
 // It cannot check layout OVERFLOW — that needs a screenshot (components/verify/shoot.sh).
@@ -109,6 +110,29 @@ const registered = [...new Set([
 for (const u of used) if (!registered.includes(u)) bad(`data-scene="${u}" is not registered`);
 for (const r of registered) if (!used.includes(r)) console.log('  note: scene', r, 'registered but unused');
 if (used.length && used.every(u => registered.includes(u))) ok(`scenes wired (${used.join(', ')})`);
+
+/* ---------- flash guard: PRIME at departure, PLAY on arrival (pitfalls.md trap 2) ----------
+ * The camera shows the destination DURING the flight. If its initial (hidden) state is applied
+ * on arrival, the audience sees it finished, then empty, then animating back in. The engine
+ * primes every station at departure (primeStation, called from goto) and a scene primes
+ * through prep(el). Both are checked here; components/verify/flash.mjs checks it for real. */
+const noComments = t => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
+const code = noComments(js);
+const gotoBody = (code.match(/function goto\s*\([^)]*\)\s*\{([\s\S]*?)\n {0,4}\}/) || [])[1] || '';
+if (!/function primeStation\s*\(/.test(code))
+  bad('flash guard: no primeStation() in the engine — every station is hidden on arrival and FLASHES (pitfalls.md trap 2; rebuild from the current template)');
+else if (!/primeStation\s*\(/.test(gotoBody))
+  bad('flash guard: goto() never calls primeStation() — the flight shows the finished station, then arrival hides it (trap 2)');
+else ok('flash guard: goto() primes the destination before it flies');
+{
+  const regs = [...code.matchAll(/sceneRegistry(?:\.([A-Za-z_$][\w$]*)|\[['"]([^'"]+)['"]\])\s*=(?!=)/g)];
+  const noPrep = regs.filter((m, i) => {
+    const seg = code.slice(m.index, i + 1 < regs.length ? regs[i + 1].index : m.index + 6000);
+    return !/\bprep\s*(\(|:)/.test(seg);
+  }).map(m => m[1] || m[2]);
+  for (const n of noPrep) bad(`flash guard: scene "${n}" has no prep(el) — its initial state is set on arrival, so it FLASHES. Move every reset out of run() into prep(el) (trap 2)`);
+  if (regs.length && !noPrep.length) ok(`flash guard: every scene has prep(el) (${regs.length})`);
+}
 
 /* ---------- data-fly values the engine actually handles ---------- */
 // A fly the engine does not know silently degrades to the default pan; a fly that forgets to

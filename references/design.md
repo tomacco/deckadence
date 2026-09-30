@@ -110,6 +110,22 @@ Dark-first: use `.station.invert` for the light stations (and darken the gold ac
 them — metallics wash out on ivory). Motion: slow (`PACE = 1.25`), long holds, gold SVG
 stroke-draws as the signature flourish.
 
+### 7. Gallery — keynotes, board rooms, portfolio reviews, anything that must feel considered
+A white-cube room. Warm wall, ink, a light serif at large sizes, and small museum wall labels
+(artist, title, year, medium) as captions. The only accent is the red dot a gallery sticks
+beside a piece that has found its owner: use it once per station at most, and let it land
+last. The Deckadence landing page is the reference build (`docs/index.html`).
+```css
+--bg:#F3F0E9; --ink:#151412; --ink-soft:#3B3833; --muted:#8E887D; --accent:#C8102E;
+--line:rgba(21,20,18,.16);
+--font-display:"Newsreader",serif; --font-body:"Inter",sans-serif;
+--display-transform:none; --display-weight:300; --display-tracking:-.025em;
+```
+Font link: `family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..500&family=Inter:wght@400..700`,
+and set `font-variation-settings:'opsz' 72` on `.display` so the large sizes use the display
+cut. Italic `<em>` carries the emphasis (never the accent). Motion: unhurried (`PACE = 1.15`),
+hairline SVG drawings, long holds; the dark `.station.invert` is the projection room.
+
 ## Rules that hold in EVERY direction
 
 - **One accent color, used deliberately.** If everything is accented, nothing is.

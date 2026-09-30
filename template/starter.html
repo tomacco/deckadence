@@ -347,7 +347,7 @@
   // to linear (with a console warning). Named eases like 'out(3)' are fine.
   const EASE = anime.cubicBezier ? anime.cubicBezier(.82, 0, .18, 1) : 'inOutQuart';
   // PACE = the design direction's motion personality (see references/design.md:
-  // Terminal 0.85, Editorial 1.15, Midnight Luxe 1.25). 1 = neutral.
+  // Terminal 0.85, Editorial 1.15, Gallery 1.15, Midnight Luxe 1.25). 1 = neutral.
   const PACE = 1;
   // Motion IS content. Reduced-motion (OS "animations off" — headless Chrome
   // reports it too) gets a calmer/faster scale, NEVER a dead cut.
@@ -569,6 +569,8 @@
     // spends its opening beats playing to a camera that is still travelling — and on a
     // `dive` that is 1.75s of choreography the audience watches from across the plane.
     // Guarded by a nav token so an interrupted fly never reveals over another station.
+    // PRIME NOW, reveal on arrival: the destination is hidden before the camera shows it.
+    primeStation(s);
     const reveal = () => { if (fresh()) revealStation(s); };
     const mid = () => { if (fresh()) setTone(i); };
     // Same-station replay (Esc/↓): no flight to wait for, so reveal at once. Scenes were
@@ -608,10 +610,9 @@
   // Release the clip masks once lines land, so descenders are never cropped.
   function releaseClips(el) { el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'visible'; }); }
 
-  function playIntro(s, isNew) {
-    if (!isNew) return;
-    const el = s.el;
-    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });  // re-mask for replays
+  // What the generic intro animates: heading LINES (split + fitted once) and data-fade elements
+  // (or, on a station with neither, its non-absolute children).
+  function introTargets(el) {
     el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
     el.querySelectorAll('[data-split="lines"]').forEach(fitHeading);
     const lines = el.querySelectorAll('.lineInner');
@@ -620,16 +621,25 @@
     if (!lines.length && !fades.length) {
       autos = Array.from(el.children).filter(c => getComputedStyle(c).position !== 'absolute');
     }
-    const fadeTargets = [...fades, ...autos];
+    return { lines, fadeTargets: [...fades, ...autos] };
+  }
+  // PRIME = the initial (hidden) state. Runs at DEPARTURE via primeStation(), never on arrival.
+  function primeIntro(el) {
+    el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });  // re-mask for replays
+    const { lines, fadeTargets } = introTargets(el);
+    // guard empty lists — anime warns on no targets
+    if (lines.length) utils.set(lines, { translateY: '100%' });
+    if (fadeTargets.length) utils.set(fadeTargets, { opacity: 0, translateY: 22 });
+  }
+  // PLAY = animate from the primed state. Never sets an initial state itself.
+  function playIntro(el) {
+    const { lines, fadeTargets } = introTargets(el);
     if (STILL) {                     // flat final frame: what a screenshot must show
       releaseClips(el);
       if (lines.length) utils.set(lines, { translateY: '0%' });
       if (fadeTargets.length) utils.set(fadeTargets, { opacity: 1, translateY: 0 });
       return;
     }
-    // initial state BEFORE visible (guard empty lists — anime warns on no targets)
-    if (lines.length) utils.set(lines, { translateY: '100%' });
-    if (fadeTargets.length) utils.set(fadeTargets, { opacity: 0, translateY: 22 });
     if (lines.length) animate(lines, { translateY: ['100%', '0%'], duration: 1150 * MOTION,
       delay: anime.stagger(150 * MOTION), ease: EASE, onComplete: () => releaseClips(el) });
     else releaseClips(el);
@@ -645,9 +655,26 @@
   // scene's CSS rest state is hidden — e.g. paths pre-set to a full dashoffset).
   function revealStation(s) {
     const name = s.el.dataset.scene, sc = name && sceneRegistry[name];
-    if (STILL) { if (sc && sc.still) sc.still(s.el); playIntro(s, true); return; }
+    if (STILL) { if (sc && sc.still) sc.still(s.el); playIntro(s.el); return; }
+    // Safety net: a path that reveals without priming (a custom fly, an addon) still animates,
+    // but it flashes: that is a bug in the caller, so say so. components/verify/flash.mjs finds it.
+    if (!s.primed) { console.warn('[deckadence] station revealed without priming (it will flash):', s.key || s.el.id); primeStation(s); }
+    s.primed = false;
     if (sc) { sc.run(s.el); return; }
-    playIntro(s, true);
+    playIntro(s.el);
+  }
+  // PRIME a station: put everything its reveal will animate into the INITIAL state. goto() calls
+  // this at DEPARTURE, while the destination is still masked off-screen, so the flight shows the
+  // station EMPTY and the reveal on arrival only ever ADDS. Priming on arrival (inside run() or
+  // the intro) is the final-state flash: the flight shows the finished station, arrival hides it,
+  // then it animates back in (pitfalls.md trap 2). A scene primes through its prep(el).
+  function primeStation(s) {
+    s.primed = true;
+    if (STILL) return;
+    const name = s.el.dataset.scene, sc = name && sceneRegistry[name];
+    if (!sc) { primeIntro(s.el); return; }
+    if (sc.prep) sc.prep(s.el);
+    else console.warn('[deckadence] scene "' + name + '" has no prep(el): it will flash on every arrival');
   }
 
   /* ---------- example scene: "diagram" (stroke-draw + pulse) ----------
@@ -686,21 +713,26 @@
       diagramScene.anims.forEach(a => { try { a.pause(); } catch (e) {} });
       diagramScene = null;
     },
+    // PREP = every element's initial state. The engine calls it at DEPARTURE (primeStation), so
+    // the flight already shows the station empty. Never reset inside run(): by then the camera
+    // has shown the finished station, and hiding it now is the final-state flash.
+    prep(el) {
+      el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });
+      el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
+      utils.set(el.querySelectorAll('.lineInner'), { translateY: '100%' });
+      utils.set(el.querySelector('.eyebrow'), { opacity: 0 });
+      el.querySelectorAll('.node').forEach(n => utils.set(n, { opacity: 0 }));
+      el.querySelectorAll('.wire').forEach(p => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; });
+      utils.set(el.querySelectorAll('.pulse'), { opacity: 0 });
+    },
+    // RUN = play from the primed state, on arrival.
     run(el) {
       sceneRegistry.diagram.stop();
       const scene = { cancelled: false, timers: [], anims: [] };
       diagramScene = scene;
       const q = s => el.querySelectorAll(s);
-      // reset: initial state BEFORE anything is visible — no final-state flash
-      el.querySelectorAll('.clip').forEach(c => { c.style.overflow = 'hidden'; });
-      el.querySelectorAll('[data-split="lines"]').forEach(splitLines);
-      const lines = el.querySelectorAll('.lineInner');
-      utils.set(lines, { translateY: '100%' });
-      utils.set(el.querySelector('.eyebrow'), { opacity: 0 });
+      const lines = q('.lineInner');
       const nodes = [...q('.node')], wires = [...q('.wire')], pulses = [...q('.pulse')];
-      nodes.forEach(n => utils.set(n, { opacity: 0 }));
-      wires.forEach(p => { const L = p.getTotalLength(); p.style.strokeDasharray = L; p.style.strokeDashoffset = L; });
-      utils.set(pulses, { opacity: 0 });
       (async () => {
         scene.anims.push(animate(el.querySelector('.eyebrow'), { opacity: [0, .55], duration: 500 * MOTION }));
         scene.anims.push(animate(lines, { translateY: ['100%', '0%'], duration: 1000 * MOTION, ease: EASE,
@@ -827,7 +859,7 @@
     version: 1,
     cam, stations, world, viewport: viewportEl,
     current: () => cur, isBusy: () => busy, isOverview: () => overview, still: STILL,
-    goto, toOverview, render, fitZoom, revealStation, splitLines, fitHeading, releaseClips,
+    goto, toOverview, render, fitZoom, primeStation, revealStation, splitLines, fitHeading, releaseClips,
     setInset(px) { insetLeft = Math.max(0, +px || 0); refit(); },
     isPresenting: () => !!(document.fullscreenElement || document.webkitFullscreenElement),
   };
@@ -863,10 +895,11 @@
   stations[start].el.style.visibility = 'hidden';
   Promise.all([document.fonts.ready, new Promise(r => setTimeout(r, 240))]).then(() => {
     const st = stations[start];
-    st.el.style.visibility = '';                       // same tick as the reset → no flash
     updateCulling();                                   // (touch: re-cull if the user moved on)
     railWindow(cur);                                   // web fonts can widen the counter
-    if (cur !== start) return;                         // user already navigated away
+    if (cur !== start) { st.el.style.visibility = ''; return; }   // user already navigated away
+    primeStation(st);                                  // initial state first...
+    st.el.style.visibility = '';                       // ...then visible, same tick → no flash
     revealStation(st);
   });
 })();

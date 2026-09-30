@@ -24,8 +24,9 @@ Animation craft for the deck. anime.js v4 UMD — named exports live on the glob
 3. **Motion is content, not decoration.** Never gate scene/scroll/dive animations on
    `prefers-reduced-motion` — headless Chrome and OS "animations off" report `reduce`, and a
    dead cut kills the talk. Scale durations down (×0.6) instead.
-4. **Set initial state BEFORE the element is visible.** See reset/play below — the #1 source
-   of visual bugs.
+4. **Prime at departure, play on arrival.** A scene's initial state lives in `prep(el)`,
+   which the engine calls BEFORE the camera flies (see the contract below). The #1 source of
+   visual bugs (pitfalls.md trap 2).
 
 ## The generic intro (free for every station)
 
@@ -67,12 +68,16 @@ sceneRegistry.myname = {
     myScene.anims.forEach(a => { try { a.pause(); } catch (e) {} });
     myScene = null;
   },
+  // 1. PREP: every element's initial state. The engine calls this at DEPARTURE
+  //    (primeStation in goto), while the station is off-screen. NEVER reset in run().
+  prep(el) {
+    // utils.set(...opacity 0...), hide paths (dashoffset = length), clear typed text, …
+  },
   run(el) {
     sceneRegistry.myname.stop();
     const scene = { cancelled: false, timers: [], anims: [] };
     myScene = scene;
-    // 1. RESET: apply every element's initial state NOW, before anything shows
-    // 2. PLAY: an async IIFE sequences the beats
+    // 2. PLAY from the primed state: an async IIFE sequences the beats
     (async () => {
       await wait(scene, 600); if (scene.cancelled) return;
       // ...each beat: animate, then `await wait(...); if (scene.cancelled) return;`
@@ -82,7 +87,8 @@ sceneRegistry.myname = {
 ```
 
 Opt the station in with `data-scene="myname"`. The template's `goto()` stops **every**
-registered scene on **every** navigation (cancel-on-leave) and, **on arrival**, runs the new
+registered scene on **every** navigation (cancel-on-leave), **primes** the destination at
+departure (`primeStation()` → the scene's `prep(el)`), and, **on arrival**, runs the new
 station's scene instead of the generic intro via `revealStation()`; the boot deep-link path
 calls the same function. Scenes therefore replay fresh on re-entry and never leak timers.
 
@@ -90,7 +96,8 @@ calls the same function. Scenes therefore replay fresh on re-entry and never lea
 
 | Member | Required | Does |
 |---|---|---|
-| `run(el)` | yes | reset to initial state, then play. Also the place for heavyweight TEARDOWN (see below) |
+| `prep(el)` | yes | set EVERY initial state the scene animates from. Called at departure, before the flight shows the station. `check.mjs` fails a scene without it |
+| `run(el)` | yes | play from the primed state, on arrival. Never hide anything here. Also the place for heavyweight TEARDOWN (see below) |
 | `stop()` | yes | **freeze**: cancel timers, pause tweens, drop the handle. Never dispose |
 | `still(el)` | no | paint a flat final frame for `?still=1`. Only needed when the scene's CSS rest state is hidden |
 | `handleKey(dir)` | no | presenter beats. Return `true` to consume the keypress, `false` to let the engine navigate |
@@ -118,10 +125,12 @@ The station uses **no** `data-fly` (the default pan dispatches `run`), state liv
 station element (`data-shown`) so N instances share one code path, and `still()` opens the
 payload so a screenshot shows the full station rather than beat 0.
 
-> **The reset/play split is a HARD RULE.** If a panel becomes visible and THEN its animation
-> resets and plays, the audience sees the final state flash for a frame before it animates.
-> Apply initial state (`utils.set`, dashoffset hiding, opacity 0) BEFORE the reveal beat;
-> never rely on an animation's first frame to hide its end state.
+> **The prep/run split is a HARD RULE, and the engine enforces the timing.** Initial state
+> (`utils.set`, dashoffset hiding, opacity 0, cleared text) goes in `prep(el)`, which runs
+> before the camera shows the station; `run()` only plays. A reset inside `run()` happens on
+> arrival, after the flight has shown the finished station: that is the final-state flash
+> (pitfalls.md trap 2). The same split applies inside a scene between beats: set a panel's
+> initial state before the beat that reveals it, never on its animation's first frame.
 
 ## One-knob speed control
 

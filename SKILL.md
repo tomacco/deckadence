@@ -1,6 +1,6 @@
 ---
 name: deckadence
-description: 'Build indulgently animated, single-file HTML presentations — a spatial camera-over-a-world deck engine with cinematic transitions, choreographed reveals, and self-drawing SVG diagrams. Use when the user wants slides, a talk deck, a presentation, a keynote, or to present/pitch something — especially "like a Prezi", "animated slides", or "HTML slides". Works from zero — no framework, no build step, one HTML file.'
+description: 'Build single-file HTML presentations with considered, cinematic motion — a spatial camera-over-a-world deck engine with choreographed reveals and self-drawing SVG diagrams. Use when the user wants slides, a talk deck, a presentation, a keynote, or to present/pitch something — especially "like a Prezi", "animated slides", or "HTML slides". Works from zero — no framework, no build step, one HTML file.'
 ---
 
 # Deckadence
@@ -72,7 +72,9 @@ placeholder look like finished copy.
 **Never declare a deck done that you have not seen rendered.** Serve it, screenshot every
 station with `?still=1#<id>` (or `#<KEY>`), and read the images — that flat mode exists because an animated
 station shot mid-rise photographs as an empty frame and hides every layout bug. Then run the
-static gates and walk the deck with arrow keys for the motion. Full recipe and what headless
+static gates, run the **flash probe** (`node components/verify/flash.mjs deck/index.html`: it
+walks the deck in a real browser and fails if anything is drawn finished, then hidden and
+replayed), and walk the deck with arrow keys for the motion. Full recipe and what headless
 can NOT tell you: `references/pitfalls.md`.
 
 Tell the user: arrows/Space navigate, `O` = overview, `F` = full screen, dots jump, `#KEY`
@@ -93,8 +95,12 @@ reply (attach a `patch` so their Apply button makes the change). Full loop:
 1. **Every station gets a transition** — even subtle. Never a bare cut.
 2. **One element owns each moment.** If two things pulse, neither is the focus.
 3. **Split headings into LINES, never characters** — char-splitting breaks words mid-word.
-4. **Set initial state BEFORE elements are visible** (reset/play split) — or the final
-   state flashes on reveal.
+4. **Prime at departure, play on arrival.** The camera shows the destination DURING the
+   flight, so its initial (hidden) state must be set before the flight starts: `goto()`
+   calls `primeStation()`, and every scene puts its initial state in **`prep(el)`**, never in
+   `run()`. A reset on arrival is the final-state flash: the audience sees the station
+   finished, then empty, then animating back in. `check.mjs` fails a scene without `prep`;
+   `flash.mjs` catches the flash itself.
 5. **Never override a station's `position`** — it must stay `position:absolute`.
 6. **Motion is content**: under `prefers-reduced-motion`, scale durations down — never cut
    animations entirely.
@@ -106,7 +112,8 @@ reply (attach a `patch` so their Apply button makes the change). Full loop:
    tone": the dark station on a light direction, the light one on a dark-first direction.
 10. **One accent color per station, used deliberately.**
 11. **A station reveals on ARRIVAL, never at departure** — and any custom fly you add must
-    dispatch that reveal itself, or the station arrives dead.
+    dispatch that reveal itself, or the station arrives dead. (It is PRIMED at departure:
+    rule 4. Add a fly as a branch inside `goto()`, below `primeStation(s)`.)
 12. **Never ship a deck you have not looked at.** `?still=1` + a screenshot per station.
 13. **Every deck is phone- and iPad-friendly out of the box.** The full-screen button,
     swipe nav, letterbox mask, culling, rotate hint and phone HUD ship in the template and
@@ -138,6 +145,7 @@ Each file's header carries its own WHAT / SPLICE / NEEDS / WIRE. Read the one yo
 |---|---|
 | `components/verify/check.mjs` | after EVERY edit — static gates, exits nonzero |
 | `components/verify/shoot.sh` | before declaring done — a still screenshot per station (`DECK_SHOT=phone` too) |
+| `components/verify/flash.mjs` | before declaring done, and after touching ANY scene or fly — fails on the final-state flash |
 | `components/scenes/reveal.js` | a station holds a question, then reveals on the presenter's key |
 | `components/addons/fly-through-overview.js` | one station should arrive via the map |
 | `components/addons/site-iframe.js` | a station IS a real website, scrolled live |

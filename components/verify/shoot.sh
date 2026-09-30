@@ -30,7 +30,9 @@ OUT="$ROOT/.shots"; [ "${DECK_SHOT:-desktop}" = desktop ] || OUT="$OUT/$DECK_SHO
 
 # ---------- stations ----------
 if [ "$#" -gt 0 ]; then STATIONS=("$@"); else
-  mapfile -t STATIONS < <(grep -oE '<section[^>]*class="[^"]*station[^"]*"[^>]*>' "$DECK" \
+  # a read loop, not mapfile: macOS ships bash 3.2, which has no mapfile
+  STATIONS=()
+  while IFS= read -r sid; do STATIONS+=("$sid"); done < <(grep -oE '<section[^>]*class="[^"]*station[^"]*"[^>]*>' "$DECK" \
     | grep -oE 'id="[^"]+"' | cut -d'"' -f2)
 fi
 [ "${#STATIONS[@]}" -gt 0 ] || { echo "no stations found in $DECK" >&2; exit 1; }
@@ -46,6 +48,13 @@ elif grep -qi microsoft /proc/version 2>/dev/null; then
   done
 fi
 : "${BROWSER:=$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)}"
+if [ -z "$BROWSER" ]; then   # macOS: the browsers live in app bundles, not on PATH
+  for c in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+           "/Applications/Chromium.app/Contents/MacOS/Chromium" \
+           "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"; do
+    [ -x "$c" ] && { BROWSER="$c"; break; }
+  done
+fi
 [ -n "$BROWSER" ] || { echo "no headless browser found — set DECK_BROWSER" >&2; exit 1; }
 case "$BROWSER" in *.exe) WINDOWS=1;; esac
 # A Windows browser writes to WINDOWS paths; stage there, then copy back into Linux to read.
@@ -64,7 +73,8 @@ for _ in 1 2 3; do
   p="$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')"
   python3 -m http.server "$p" --bind 127.0.0.1 --directory "$ROOT" >/dev/null 2>&1 &
   SRV=$!; sleep 1
-  if ss -ltn 2>/dev/null | grep -q ":$p\b"; then PORT="$p"; break; fi
+  # ask the server itself (ss is Linux-only; curl is everywhere)
+  if curl -s -o /dev/null "http://127.0.0.1:$p/"; then PORT="$p"; break; fi
   kill "$SRV" 2>/dev/null
 done
 [ -n "$PORT" ] || { echo "could not start a server" >&2; exit 1; }
@@ -80,12 +90,17 @@ for id in "${STATIONS[@]}"; do
   # --run-all-compositor-stages-before-draw, NOT --virtual-time-budget: the latter shoots
   # before a late stylesheet applies (blank white frame) and hangs on endless rAF.
   # Unique --user-data-dir per shot: a shared profile lock yields 0-byte PNGs.
-  timeout 90 "$BROWSER" --headless=new --disable-gpu --hide-scrollbars \
+  # Backgrounded + polled, then killed: some builds (Chrome on macOS) write the PNG and then
+  # never exit while the page runs a CSS animation, and stock macOS has no `timeout`.
+  "$BROWSER" --headless=new --disable-gpu --hide-scrollbars \
     --window-size="$W,$H" --run-all-compositor-stages-before-draw \
     --user-data-dir="$udd" --screenshot="$target" \
-    "http://127.0.0.1:$PORT/$PAGE?still=1#$id" >/dev/null 2>&1
+    "http://127.0.0.1:$PORT/$PAGE?still=1#$id" >/dev/null 2>&1 &
+  BPID=$!
   # The browser exits NONZERO even on success — poll for the file, never trust $?.
-  for _ in $(seq 1 30); do [ -s "$staged" ] && break; sleep 1; done
+  for _ in $(seq 1 60); do [ -s "$staged" ] && break; kill -0 "$BPID" 2>/dev/null || break; sleep 1; done
+  sleep 1; kill "$BPID" 2>/dev/null; wait "$BPID" 2>/dev/null
+  [ "$WINDOWS" = 1 ] || rm -rf "$udd"
   if [ -s "$staged" ]; then
     [ "$staged" = "$final" ] || cp "$staged" "$final"
     echo "  $id  ->  $final"
