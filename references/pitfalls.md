@@ -121,6 +121,15 @@ Every trap here has actually bitten. Check this list before declaring a deck don
     every station and compare each dot's CENTRE (`getBoundingClientRect` left + width/2) —
     not the span of rail ink: the active dot's `scale(1.35)` widens its own box by a pixel
     or two, and a span measurement reports that as drift.
+22. **Per-station setup done once at boot (or a deck that holds every station).** With the live
+    window, far stations leave the DOM and come back from their authored markup. Code that
+    runs `stations.forEach(layout)` at boot lays out only the live ones, and anything it
+    attached (an element property, a listener, an inlined SVG) is gone after a remount. Put
+    per-station setup in the scene's `mount(el)` (or a `deck:mount` listener), which runs on
+    every mount. A deck that cannot is served with `<html data-live="all">`, at the old memory
+    cost. The other half of the trap: the plane must not paint before the engine runs, or a
+    late engine script lets the browser decode every photo while parsing (`check.mjs` gate).
+    `components/verify/memory.mjs` shows both: live stations and painted images per step.
 
 ## Verifying an animated deck (do this — don't ship blind)
 

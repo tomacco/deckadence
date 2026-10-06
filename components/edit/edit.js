@@ -109,6 +109,7 @@
     on = v;
     document.body.classList.toggle('dk-on', on);
     if (on) {
+      if (D.setLive) D.setLive('all');   // every station in the DOM: edits address the authored markup
       connect(); refresh(); setTool(tool); setNav(navOpen);
       raf = requestAnimationFrame(tick);
     } else {

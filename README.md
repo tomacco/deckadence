@@ -44,12 +44,16 @@ from making that deck work on the night.
   it with `?edit=1`. Change text where it stands, pin comments for Claude, accept or decline
   its proposals, drag slides into a new order. Everything is written back into the HTML and
   one sidecar JSON file that Claude reads. It is off by default and never on while you present.
+- **Long decks stay light.** Only the stations near the camera are in the page; the rest wait as
+  text and come back on approach, so memory stays flat from slide 3 to slide 70.
+  `components/stream/pack.mjs` publishes a deck whose stations load on demand, or stream from the
+  server one by one (`--split`); `components/verify/memory.mjs` measures a deck as it is presented.
 - **Checks before you ship.** `components/verify/check.mjs` runs static gates on the file
   (layout staircase, keys, scene wiring, phone chrome). `components/verify/shoot.sh` takes a
   still screenshot of every slide, so Claude looks at the deck before calling it done.
   `components/verify/flash.mjs` walks the deck in a real browser and fails if anything
   appears finished, vanishes and animates in again as you arrive.
-- **Twenty-one traps already handled.** Words broken mid-line, a finished frame flashing
+- **Twenty-two traps already handled.** Words broken mid-line, a finished frame flashing
   before its animation, reduced-motion settings killing the show, iframes that balloon. Each
   one is written down in `references/pitfalls.md` with its fix built into the template.
 

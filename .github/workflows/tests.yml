@@ -33,10 +33,10 @@ jobs:
       - name: shell syntax
         run: bash -n components/verify/shoot.sh
       - name: static gates, edit source, edit server
-        run: node --test tests/gates.test.mjs tests/source.test.mjs tests/edit-server.test.mjs
+        run: node --test tests/gates.test.mjs tests/source.test.mjs tests/edit-server.test.mjs tests/stream.test.mjs
 
   browser:
-    name: browser · flash probe
+    name: browser · flash probe + live window
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -49,3 +49,5 @@ jobs:
       - run: google-chrome --version
       - name: flash probe on the template and the landing, and on a deliberately broken engine
         run: node --test tests/browser.test.mjs
+      - name: live window (memory.mjs walks heavy, packed and streamed decks; each with the bug put back)
+        run: node --test tests/live.test.mjs

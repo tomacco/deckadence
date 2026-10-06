@@ -30,6 +30,8 @@ on every pull request and every push to `main`. A pull request is ready when it 
 | `tests/source.test.mjs` | edit mode's byte-exact write-back, stale-edit refusal, patches, reorder |
 | `tests/edit-server.test.mjs` | the edit server over HTTP, cross-origin refusal, and the agent's `review.mjs` loop |
 | `tests/browser.test.mjs` | the flash probe on real Chrome, including the reintroduced-bug regression |
+| `tests/stream.test.mjs` | `pack.mjs` (byte-exact templates and fragments, refusals) and the live-window gate |
+| `tests/live.test.mjs` | the live window on real Chrome via `memory.mjs`: bounded live stations, the paint gate under a slow script, packed and streamed decks; each paired with the bug put back. No remote debugging needed |
 
 Not covered yet: `shoot.sh` output (its headless capture can race the engine's fonts-ready
 boot), motion timing beyond the flash, and evals of generated decks.

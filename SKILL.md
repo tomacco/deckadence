@@ -124,6 +124,10 @@ reply (attach a `patch` so their Apply button makes the change). Full loop:
     renumbers them, and `#s4 .bar` silently styles nothing, or styles whichever station
     inherited the number. Write `[data-key="LYRA"] .bar` (or a class the station carries).
     `check.mjs` warns on any `#sN`-scoped rule and fails one that lands on another station.
+15. **Per-station setup lives in the scene's `mount(el)`.** Only the stations near the camera
+    are in the DOM (the live window); the rest come back from their markup on approach. Work
+    done once over all stations at boot is lost. Pack a long deck to publish it
+    (`components/stream/pack.mjs`), and check it with `components/verify/memory.mjs`.
 
 ## Reference map (read on demand)
 
@@ -146,6 +150,8 @@ Each file's header carries its own WHAT / SPLICE / NEEDS / WIRE. Read the one yo
 | `components/verify/check.mjs` | after EVERY edit — static gates, exits nonzero |
 | `components/verify/shoot.sh` | before declaring done — a still screenshot per station (`DECK_SHOT=phone` too) |
 | `components/verify/flash.mjs` | before declaring done, and after touching ANY scene or fly — fails on the final-state flash |
+| `components/verify/memory.mjs` | a long or photo-heavy deck: memory, live stations and load per station, without DevTools |
+| `components/stream/pack.mjs` | publishing: stations load on demand (`--split` streams them from the server, `--posters` for the overview) |
 | `components/scenes/reveal.js` | a station holds a question, then reveals on the presenter's key |
 | `components/addons/fly-through-overview.js` | one station should arrive via the map |
 | `components/addons/site-iframe.js` | a station IS a real website, scrolled live |
