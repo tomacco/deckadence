@@ -33,7 +33,7 @@ function packed(file, split) {
   return join(dir, name);
 }
 
-describe('live window (memory.mjs walks every station)', { concurrency: true, skip }, () => {
+describe('live window (memory.mjs walks every station)', { concurrency: 3, skip }, () => {
   test('only the stations near the camera are in the DOM, and every arrival has its content', async () => {
     const { code, out, m } = await walk(heavyDeck(PHOTOS));
     assert.equal(code, 0, out);
@@ -71,6 +71,22 @@ describe('live window (memory.mjs walks every station)', { concurrency: true, sk
     assert.equal(r.code, 1, r.out);                                            // memory.mjs flags the empty arrivals
     assert.deepEqual([...m.unmounted_arrivals].sort(), ['P02', 'P04']);
     assert.equal(m.steps.filter(s => !s.overview).length, 6 + 6 + 1);         // boot + every station: the walk finished
+  });
+
+  // A scene whose mount(el) throws breaks that station's own setup, never the deck: every station is
+  // still reached and holds its markup (the RIGEL scene is the template's diagram).
+  test('a scene mount that throws does not break navigation', async () => {
+    const throwing = s => once(s, '  sceneRegistry.diagram = {\n', "  sceneRegistry.diagram = {\n    mount(el) { throw new Error('boom'); },\n");
+    const { code, out, m } = await walk(heavyDeck(4, throwing));
+    assert.equal(code, 0, out);
+    assert.deepEqual(m.unmounted_arrivals, []);
+    assert.equal(m.steps.filter(s => !s.overview).length, 6 + 4 + 1);
+  });
+
+  test('a deck:mount listener in a later script hears the first station', async () => {
+    const { code, out, m } = await walk(heavyDeck(2));
+    assert.equal(code, 0, out);
+    assert.equal(m.boot_mount_heard, true);
   });
 
   for (const split of [false, true]) {

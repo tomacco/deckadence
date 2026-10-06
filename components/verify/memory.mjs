@@ -40,15 +40,20 @@ if (!CHROME) { console.error('no Chrome found; pass --chrome or set DECK_BROWSER
 const DRIVER = `<script>(() => {
   // images the browser actually PAINTED (Element Timing; the decks under test tag <img elementtiming>)
   let painted = 0;
+  // this driver is a LATER script than the engine: it must hear the first station's deck:mount too
+  const heard = new Set();
+  document.addEventListener('deck:mount', e => heard.add(e.detail.key || e.detail.id));
   try { new PerformanceObserver(l => { painted += l.getEntries().length; }).observe({ type: 'element', buffered: true }); } catch (e) {}
   const post = (path, body) => fetch(path, { method: 'POST', body: JSON.stringify(body) }).catch(() => {});
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const snap = (i) => ({ i, key: (D.stations[i] || {}).key || '', heap: performance.memory ? performance.memory.usedJSHeapSize : null,
     nodes: document.getElementsByTagName('*').length, imgs: document.images.length, painted,
+    heardMount: D.stations[i] ? heard.has(D.stations[i].key || D.stations[i].el.id) : false,
     live: D.stations.filter(s => s.el.childElementCount > 0).length,
     mounted: !!(D.stations[i] && D.stations[i].el.childElementCount > 0 && !D.stations[i].el.querySelector('.station-error')) });
   let D;
   addEventListener('load', async () => {
+    post('/__mem/boot', {});
     for (let k = 0; k < 100 && !(D = window.Deckadence); k++) await sleep(50);
     if (!D) { post('/__mem/done', { error: 'no window.Deckadence' }); return; }
     await sleep(1500);
@@ -58,6 +63,10 @@ const DRIVER = `<script>(() => {
       const frames = []; let last = performance.now(), on = true;
       const tick = t => { frames.push(t - last); last = t; if (on) requestAnimationFrame(tick); };
       requestAnimationFrame(tick);
+      // walk like a presenter: keys are ignored while the engine is busy, so wait for it (a station
+      // that holds the camera forever then shows up as a walk that never finishes)
+      for (let k = 0; k < 1200 && D.isBusy(); k++) await sleep(25);
+      if (D.isBusy()) { post('/__mem/done', { error: 'the engine stayed busy for 30 s before station ' + (i + 1) + ' (camera held)' }); return; }
       if (i !== D.current()) D.goto(i);
       for (let k = 0; k < 400 && D.isBusy(); k++) await sleep(25);
       on = false;
@@ -93,19 +102,21 @@ function treeRss(rootPid) {
 }
 
 const srv = createServer((req, res) => {
-  const url = new URL(req.url, 'http://x'), p = decodeURIComponent(url.pathname);
+  let p;
+  try { p = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch (e) { res.writeHead(400); res.end(); return; }
   if (req.method === 'POST' && p.startsWith('/__mem/')) {
     let body = ''; req.on('data', d => { body += d; }); req.on('end', () => {
       let j = {}; try { j = JSON.parse(body || '{}'); } catch (e) {}
-      if (p === '/__mem/step') { if (bootBytes === null) { bootBytes = servedBytes; bootRequests = requests; } steps.push({ ...j, at: Date.now(), rss: chrome ? treeRss(chrome.pid) : null }); }
+      if (p === '/__mem/step') { steps.push({ ...j, at: Date.now(), rss: chrome ? treeRss(chrome.pid) : null }); }
       if (p === '/__mem/done') doneInfo = j;
+      if (p === '/__mem/boot' && bootBytes === null) { bootBytes = servedBytes; bootRequests = requests; }
       res.writeHead(204); res.end();
     });
     return;
   }
   const file = resolve(join(ROOT, p === '/' ? PAGE : p));
   if (!(file === ROOT || file.startsWith(ROOT + sep)) || !existsSync(file) || statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
-  if (SLOW && p === SLOW.path && !req.slowed) { req.slowed = true; setTimeout(() => srv.emit('request', req, res), SLOW.ms); return; }
+  if (SLOW && p === SLOW.path && !SLOW.done) { SLOW.done = true; setTimeout(() => srv.emit('request', req, res), SLOW.ms); return; }
   res.writeHead(200, { 'Content-Type': MIME[extname(file).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
   requests++;
   if (file === DECK) { const body = readFileSync(file, 'utf8').replace(/<\/body>/i, DRIVER + '</body>'); servedBytes += Buffer.byteLength(body); res.end(body); return; }
@@ -118,6 +129,7 @@ const port = srv.address().port;
 const profile = mkdtempSync(join(tmpdir(), 'deck-mem-'));
 chrome = spawn(CHROME, ['--headless=new', '--hide-scrollbars', '--window-size=1920,1080', '--enable-precise-memory-info',
   '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, `http://127.0.0.1:${port}${PAGE}`], { stdio: 'ignore' });
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { try { chrome.kill(); } catch (e) {} try { rmSync(profile, { recursive: true, force: true }); } catch (e) {} process.exit(130); });
 const t0 = Date.now();
 const sampler = setInterval(() => { const r = treeRss(chrome.pid); if (r) samples.push({ t: Date.now() - t0, ...r }); }, 250);
 const limitMs = +opt('timeout', 15 * 60_000);
@@ -146,6 +158,7 @@ const res = { stations: doneInfo.stations, peak_tree_mb: +MB(peak('total')), pea
   flight_p95_ms: (() => { const v = steps.map(s => s.p95).filter(x => x != null).sort((a, b) => a - b); return v.length ? +v[Math.floor(v.length / 2)].toFixed(1) : null; })(),
   long_frames: steps.reduce((a, s) => a + (s.long || 0), 0),
   boot_painted_images: steps[0] ? steps[0].painted : null,
+  boot_mount_heard: steps[0] ? !!steps[0].heardMount : null,
   boot_mb: +((bootBytes || 0) / 1048576).toFixed(1), boot_requests: bootRequests, total_mb: +(servedBytes / 1048576).toFixed(1),
   // every station the walk ARRIVED on held its content (an empty frame on arrival is a broken mount)
   unmounted_arrivals: steps.filter(s => !s.overview && !s.mounted).map(s => s.key || s.i + 1) };
@@ -156,7 +169,7 @@ const res = { stations: doneInfo.stations, peak_tree_mb: +MB(peak('total')), pea
   res.page_renderer_peak_mb = page ? +MB(Math.max(...series[page])) : null;
   res.page_renderer_final_mb = page ? +MB(series[page].at(-1)) : null; }
 if (res.unmounted_arrivals.length) console.log(`FAIL: arrived on station(s) with no content: ${res.unmounted_arrivals.join(', ')}`);
-console.log(`LOAD: ${res.boot_mb} MB in ${res.boot_requests} requests before the first slide (whole walk: ${res.total_mb} MB)` +
+console.log(`LOAD: ${res.boot_mb} MB in ${res.boot_requests} requests by the load event (whole walk: ${res.total_mb} MB)` +
   (res.boot_painted_images != null ? `; ${res.boot_painted_images} image(s) painted by then` : ''));
 console.log(`PAGE RENDERER: peak ${res.page_renderer_peak_mb} MB, final ${res.page_renderer_final_mb} MB · flights: median p95 frame ${res.flight_p95_ms} ms, ${res.long_frames} frames over 50 ms`);
 console.log(`PEAK: tree ${res.peak_tree_mb} MB · renderer ${res.peak_renderer_mb} MB · gpu ${res.peak_gpu_mb} MB · JS heap ${res.peak_heap_mb} MB · DOM nodes ${res.peak_dom_nodes} · live stations ${res.peak_live_stations}/${res.stations}`);

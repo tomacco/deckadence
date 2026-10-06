@@ -193,7 +193,11 @@ same deck: 255 MB renderer, 195 MB GPU, 554 DOM nodes instead of 2,588.
 - **Mount runs on every approach.** `mountStation(s)` puts the content back and runs the station's
   setup: the scene's `mount(el)` and a `deck:mount` event. A scene that measures, inlines SVG or wires
   listeners does it in `mount(el)` (it may return a Promise; navigation waits for it). Code that walks
-  every station ONCE at boot only sees the live ones (pitfalls.md trap 22).
+  every station ONCE at boot only sees the live ones (pitfalls.md trap 22). The first mount waits for
+  `DOMContentLoaded`, so listeners in later scripts hear it too. A `mount(el)` that throws or rejects
+  is reported in the console and breaks that station's setup only, never navigation. A streamed
+  station that fails to load (or takes longer than 10 s) shows a note in its frame and is fetched
+  again on the next approach; the camera is never held.
 - **Released on arrival, never before.** `settleLive()` runs after the reveal: neighbours mounted, far
   stations released, the station you left released only once the camera no longer shows it.
 - **Nothing paints before the engine.** `body:not(.deck-ready) #world { visibility: hidden }` keeps the
@@ -212,7 +216,7 @@ file, works from `file://`. Add `--split` for `index.stream.html` plus `stations
 page carries only the frames and the server streams each station as the camera approaches (the
 engine prefetches `LIVE_SPAN + 2` ahead; a failed fetch shows a note in the frame and retries on
 the next approach). `--posters` adds a small still per station for the overview. Author and edit
-the source; pack to publish. On a 26-station photo deck the authored file fetched 19 MB before the
+the source; pack to publish (edit mode refuses a packed or streamed deck). On a 26-station photo deck the authored file fetched 19 MB before the
 first slide; packed and streamed fetched 0.2 MB.
 
 `node components/verify/memory.mjs deck/index.html` walks every station in headless Chrome and

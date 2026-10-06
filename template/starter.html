@@ -475,17 +475,25 @@
     if (s.mounting) return s.mounting;
     if (!s.live) {
       if (s.src == null && !s.failed) return loadSrc(s).then(() => mountStation(s));
-      if (s.src == null) {                     // fetch failed: say so in the frame, retry next approach
+      if (s.src == null) {                     // fetch failed: the frame says so, and counts as mounted
+        // (live + mounted) so navigation goes on; released with the window, it is fetched again on
+        // the next approach. Left unmounted, goto() would refetch it forever and hold the camera.
         s.el.innerHTML = `<p class="station-error">${s.key || s.el.id} · could not load ${s.el.dataset.src}</p>`;
-        s.failed = false; return true;
+        s.failed = false; s.live = s.mounted = true; s.el.classList.remove('dormant');
+        return true;
       }
       s.el.innerHTML = s.src; s.live = true; s.primed = false;
       s.el.classList.remove('dormant'); s.el.style.backgroundImage = '';
     }
-    const sc = sceneOf(s), r = sc && sc.mount ? sc.mount(s.el) : null;
+    // A scene's mount that throws or rejects breaks that station's setup, never the deck: it is
+    // reported, and the station counts as mounted so navigation and release carry on.
+    const sc = sceneOf(s);
+    let r = null;
+    try { r = sc && sc.mount ? sc.mount(s.el) : null; } catch (e) { console.error('[deckadence] mount failed:', s.key || s.el.id, e); }
     s.el.dispatchEvent(new CustomEvent('deck:mount', { bubbles: true, detail: { key: s.key, id: s.el.id } }));
     if (!(r && typeof r.then === 'function')) { s.mounted = true; return true; }
-    return (s.mounting = r.then(() => { s.mounted = true; s.mounting = null; return true; }));
+    const settle = () => { s.mounted = true; s.mounting = null; return true; };
+    return (s.mounting = r.then(settle, e => { console.error('[deckadence] mount failed:', s.key || s.el.id, e); return settle(); }));
   }
   function unmountStation(s) {
     if (!s.live || liveAll || s.mounting) return;
@@ -669,7 +677,8 @@
     // The destination must hold its content before it is primed.
     const m = mountStation(stations[i]);
     if (m !== true) return holdFor(m, () => goto(i, opts));
-    const prev = cur; cur = i; overview = false;
+    const prev = cur, wasOverview = overview; cur = i; overview = false;
+    if (wasOverview) stations.forEach(t => { if (!t.live) t.el.style.backgroundImage = ''; });   // posters are an overview thing
     document.body.classList.remove('is-overview');
     setHud(i); updateCulling(); syncHash(i);
     Object.values(sceneRegistry).forEach(sc => sc.stop());
@@ -999,8 +1008,12 @@
   // Release everything outside the start window BEFORE first paint: an authored deck's far stations
   // never get laid out, painted or decoded. The start station itself may still be on its way.
   stations.forEach((s, k) => { if (!liveAll && !near(k, start, LIVE_SPAN)) unmountStation(s); });
-  const bootMount = mountStation(stations[start]);
   document.body.classList.add('deck-ready');          // the plane may paint now (see #world CSS)
+  // The first mount waits for the whole document, so 'deck:mount' listeners in later scripts hear it
+  // like every other mount.
+  const bootMount = new Promise(r => document.readyState === 'loading'
+    ? document.addEventListener('DOMContentLoaded', () => r(mountStation(stations[start])), { once: true })
+    : r(mountStation(stations[start])));
   cam.x = stations[start].cx; cam.y = stations[start].cy; cam.zoom = fitZoom(stations[start]);
   render();
   maskToStation(stations[start]);

@@ -28,7 +28,10 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { fileURLToPath } from 'node:url';
 import * as S from '../edit/source.mjs';
 
-export const fragmentName = st => (st.key || st.id).replace(/[^A-Za-z0-9_-]/g, '_') + '.html';
+export const fragmentName = st => {
+  if (!st.key && !st.id) throw new Error('a station has neither data-key nor id: give it one so its fragment has a stable name');
+  return (st.key || st.id).replace(/[^A-Za-z0-9_-]/g, '_') + '.html';
+};
 
 /** Pure: source HTML → { html, fragments: [{ name, content }] }. Throws on a deck the engine cannot stream. */
 export function pack(html, { split = false, posters = null } = {}) {
@@ -45,12 +48,13 @@ export function pack(html, { split = false, posters = null } = {}) {
     if (/<template\s[^>]*data-station/i.test(content) || st.el.attrs['data-src'])
       throw new Error(`station ${st.key || st.id} is already packed`);
     const name = fragmentName(st);
-    if (names.has(name)) throw new Error(`two stations would share the fragment ${name}`);
-    names.add(name);
+    // case-insensitive: Vega.html and VEGA.html are one file on macOS and Windows disks
+    if (names.has(name.toLowerCase())) throw new Error(`two stations would share the fragment ${name}`);
+    names.add(name.toLowerCase());
     let open = html.slice(st.el.start, st.el.openEnd);
     const extra = [];
     if (split) extra.push(`data-src="stations/${name}"`);
-    if (posters && posters[st.id]) extra.push(`data-poster="${posters[st.id]}"`);
+    if (posters && posters[st.id]) { open = open.replace(/\s+data-poster\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/i, ''); extra.push(`data-poster="${posters[st.id]}"`); }
     if (extra.length) open = open.replace(/\s*>$/, ' ' + extra.join(' ') + '>');
     const body = split ? '' : `<template data-station>${content}</template>`;
     if (split) fragments.unshift({ name, content });
@@ -70,6 +74,7 @@ if (isMain) {
   const outArg = argv.includes('--out') ? argv[argv.indexOf('--out') + 1] : null;
   const OUT = resolve(outArg || join(DIR, basename(SRC, extname(SRC)) + (split ? '.stream.html' : '.packed.html')));
   if (dirname(OUT) !== DIR) { console.error('the packed deck must sit next to its source: its assets are referenced relative to it'); process.exit(2); }
+  if (OUT === SRC) { console.error('--out would overwrite the source deck: the source stays the one you author and edit'); process.exit(2); }
   const html = readFileSync(SRC, 'utf8');
   let posters = null;
   if (wantPosters) posters = await makePosters(SRC, html);
@@ -94,7 +99,8 @@ async function makePosters(SRC, html) {
   if (!chrome) { console.error('--posters needs Chrome (set DECK_BROWSER)'); process.exit(2); }
   const DIR = dirname(SRC), PAGE = '/' + basename(SRC);
   const srv = createServer((req, res) => {
-    const p = decodeURIComponent(new URL(req.url, 'http://x').pathname), file = resolve(join(DIR, p));
+    let p; try { p = decodeURIComponent(new URL(req.url, 'http://x').pathname); } catch (e) { res.writeHead(400); res.end(); return; }
+    const file = resolve(join(DIR, p));
     if (!(file.startsWith(DIR + sep)) || !existsSync(file) || statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
     createReadStream(file).pipe(res);
   });

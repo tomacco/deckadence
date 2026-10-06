@@ -38,6 +38,28 @@ test('pack adds posters only to the stations that have one', () => {
   assert.equal(st[1].el.attrs['data-poster'], undefined);
 });
 
+test('pack replaces an existing data-poster, and refuses keyless id-less stations and case-only fragment clashes', () => {
+  const withPoster = once(html, 'id="s1" data-key="VEGA"', 'id="s1" data-key="VEGA" data-poster="old.png"');
+  const st = S.stations(pack(withPoster, { posters: { s1: 'posters/VEGA.png' } }).html);
+  assert.equal(st[0].el.attrs['data-poster'], 'posters/VEGA.png');
+  const open = pack(withPoster, { posters: { s1: 'posters/VEGA.png' } }).html.match(/<section[^>]*id="s1"[^>]*>/)[0];
+  assert.equal(open.match(/data-poster=/g).length, 1, open);
+  assert.throws(() => fragmentName({ key: null, id: undefined }), /neither data-key nor id/);
+  assert.throws(() => pack(once(html, 'id="s2" data-key="LYRA"', 'id="s2" data-key="vega"'), { split: true }), /share the fragment/);
+});
+
+test('edit mode refuses a packed or streamed deck (edit the source, pack again)', async () => {
+  const { writeFileSync, mkdtempSync } = await import('node:fs'), { join } = await import('node:path'), { tmpdir } = await import('node:os');
+  const { run, ROOT } = await import('./helpers.mjs');
+  for (const split of [false, true]) {
+    const f = join(mkdtempSync(join(tmpdir(), 'deck-packed-')), 'index.html');
+    writeFileSync(f, pack(html, { split }).html);
+    const r = run(process.execPath, [join(ROOT, 'components/edit/serve.mjs'), f, '--port', '0'], { timeout: 10_000 });
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /packed or streamed/);
+  }
+});
+
 test('pack refuses what it cannot stream', () => {
   assert.throws(() => pack(read(LANDING)), /no live window/);                 // an engine that predates mountStation
   assert.throws(() => pack(pack(html).html), /already packed/);                // packing twice

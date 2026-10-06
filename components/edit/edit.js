@@ -109,7 +109,9 @@
     on = v;
     document.body.classList.toggle('dk-on', on);
     if (on) {
-      if (D.setLive) D.setLive('all');   // every station in the DOM: edits address the authored markup
+      // every station in the DOM first: edits address the authored markup (inline and template stations
+      // mount synchronously; this waits for any that are still on their way)
+      Promise.resolve(D.setLive && D.setLive('all')).then(() => { if (on) refresh(); });
       connect(); refresh(); setTool(tool); setNav(navOpen);
       raf = requestAnimationFrame(tick);
     } else {
