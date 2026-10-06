@@ -3,7 +3,7 @@
 // Each case is paired with the bug put back, so the assertion is shown to be able to fail.
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ROOT, once, runAsync, findChrome } from './helpers.mjs';
@@ -57,6 +57,20 @@ describe('live window (memory.mjs walks every station)', { concurrency: true, sk
     assert.equal(gated.code, 0, gated.out); assert.equal(open.code, 0, open.out);
     assert.equal(gated.m.boot_painted_images, 0, gated.out);                  // the start station has no photo
     assert.ok(open.m.boot_painted_images >= PHOTOS / 2, `ungated painted ${open.m.boot_painted_images} photos at load\n${open.out}`);
+  });
+
+  // A streamed station that is missing (404) or never answers (held past the engine's 10 s abort) must
+  // not freeze the deck: the frame says it could not load, and the walk goes on to the last station.
+  test('a streamed station that fails or hangs does not hold the camera', async () => {
+    const file = packed(heavyDeck(6), true), dir = dirname(file);
+    rmSync(join(dir, 'stations', 'P02.html'));
+    const out = join(dir, 'mem.json');
+    const r = await runAsync(process.execPath, [join(ROOT, 'components/verify/memory.mjs'), file, '--dwell', '100',
+      '--slow', 'stations/P04.html=30000', '--json', out], { timeout: 300_000, env: { DECK_BROWSER: chrome } });
+    const m = JSON.parse(readFileSync(out, 'utf8'));
+    assert.equal(r.code, 1, r.out);                                            // memory.mjs flags the empty arrivals
+    assert.deepEqual([...m.unmounted_arrivals].sort(), ['P02', 'P04']);
+    assert.equal(m.steps.filter(s => !s.overview).length, 6 + 6 + 1);         // boot + every station: the walk finished
   });
 
   for (const split of [false, true]) {

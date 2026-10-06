@@ -442,7 +442,7 @@
      on EVERY mount, or in a 'deck:mount' listener: code that walks all stations once at boot sees
      only the live ones. <html data-live="all"> keeps every station mounted (old-style decks whose
      code does boot-time work per station), and edit mode switches to it. */
-  const LIVE_SPAN = TOUCH ? 1 : 2, PREFETCH_SPAN = LIVE_SPAN + 2;
+  const LIVE_SPAN = TOUCH ? 1 : 2, PREFETCH_SPAN = LIVE_SPAN + 2, FETCH_MS = 10000;
   let liveAll = (document.documentElement.dataset.live || document.body.dataset.live) === 'all' || /[?&]edit=1(&|$)/.test(location.search);
   stations.forEach(s => {
     const tpl = s.el.querySelector(':scope > template[data-station]');
@@ -456,11 +456,15 @@
   // rather than a hole, and is retried on the next approach.
   function loadSrc(s) {
     if (s.src != null) return Promise.resolve();
-    if (!s.loading) s.loading = fetch(s.el.dataset.src).then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.text(); })
+    if (s.loading) return s.loading;
+    // a server that never answers must not hold the camera forever: give up after FETCH_MS
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctl && setTimeout(() => ctl.abort(), FETCH_MS);
+    return (s.loading = fetch(s.el.dataset.src, ctl ? { signal: ctl.signal } : undefined)
+      .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.text(); })
       .then(t => { s.src = t; })
-      .catch(e => { s.loading = null; console.warn('[deckadence] could not load', s.el.dataset.src, e);
-                    return Object.assign(s, { failed: true }); });
-    return s.loading;
+      .catch(e => { console.warn('[deckadence] could not load', s.el.dataset.src, e); s.failed = true; })
+      .finally(() => { clearTimeout(timer); s.loading = null; }));
   }
   // Mount = content in the DOM (inserted if it was released or never arrived) + the station's own
   // setup, run once per mount: the scene's mount(el) and a 'deck:mount' event. An authored station
