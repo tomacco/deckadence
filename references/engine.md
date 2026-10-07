@@ -206,7 +206,14 @@ same deck: 255 MB renderer, 195 MB GPU, 554 DOM nodes instead of 2,588.
 - **The overview never mounts the deck.** Dormant frames show their `data-poster` still if the deck was
   packed with posters, and the station key labels either way.
 - **Opting out.** `<html data-live="all">` keeps every station mounted, for a deck whose code cannot
-  move into `mount(el)`. Edit mode switches to it (`setLive('all')`), one way for the session.
+  move into `mount(el)`.
+- **The deck is a model; the DOM is a view of a few stations.** `Deckadence.stations` are records
+  (id, key, name, position, tone, poster, content source); only the live window has DOM. Anything that
+  needs ALL stations works from the records and never from their DOM: the overview (posters), the
+  edit-mode navigator (server-rendered posters), reorder (the edit server's source model). Edit mode
+  binds a station's text when it mounts, commits an edit before its station leaves the DOM, and calls
+  `setSource(i, html)` after a save so a remount shows the edit. `components/verify/memory.mjs --edit`
+  measures edit mode with the navigator scrolled end to end.
 
 ### Publishing: packed and streamed decks
 

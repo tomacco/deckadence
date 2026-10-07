@@ -40,6 +40,38 @@ test('a text edit is written back into the HTML and logged in the sidecar', asyn
   assert.equal(side.edits.at(-1).kind, 'text');
 });
 
+// The navigator shows POSTERS, keyed by a hash of what can change them. An edit to one station must
+// change that station's poster key only, and hand back the station's new markup for the engine.
+test('posters: one key per station; a text edit changes only its own station\'s key and returns its markup', async () => {
+  const before = await (await fetch(`${base}/__deck/state`)).json();
+  assert.equal(before.order.length, 6);
+  assert.ok(before.order.every(o => /^[0-9a-f]{12}$/.test(o.poster)), JSON.stringify(before.order));
+  assert.equal(new Set(before.order.map(o => o.poster)).size, 6);
+  const u = S.editMap(read(deck)).s4.find(x => /Three moves/.test(x.text));
+  const r = await post('text', { key: u.key, base: u.html, html: u.html.replace('Three', 'Four') });
+  const body = await r.json();
+  assert.equal(r.status, 200, JSON.stringify(body));
+  assert.equal(body.station, 's4');
+  assert.match(body.inner, /Four moves/);
+  const after_ = await (await fetch(`${base}/__deck/state`)).json();
+  const changed = after_.order.filter((o, k) => o.poster !== before.order[k].poster).map(o => o.id);
+  assert.deepEqual(changed, ['s4']);
+  assert.equal(body.poster, after_.order.find(o => o.id === 's4').poster);
+});
+
+test('posters: the route renders a PNG (or says why not), and refuses unknown stations and malformed keys', async () => {
+  const st = await (await fetch(`${base}/__deck/state`)).json(), o = st.order[0];
+  assert.equal((await fetch(`${base}/__deck/poster/${o.id}?h=nothex`)).status, 404);
+  assert.equal((await fetch(`${base}/__deck/poster/s99?h=${o.poster}`)).status, 404);
+  const r = await fetch(`${base}/__deck/poster/${o.id}?h=${o.poster}`);
+  if (st.posters) {
+    assert.equal(r.status, 200, await r.clone().text());
+    assert.equal(r.headers.get('content-type'), 'image/png');
+    const png = Buffer.from(await r.arrayBuffer());
+    assert.equal(png.subarray(1, 4).toString(), 'PNG');
+  } else assert.equal(r.status, 404);
+});
+
 test('a write from another origin is refused', async () => {
   const r = await post('comment', { station: 's2', text: 'hi' }, { Origin: 'http://evil.example' });
   assert.equal(r.status, 403);

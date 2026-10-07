@@ -89,6 +89,29 @@ describe('live window (memory.mjs walks every station)', { concurrency: 3, skip 
     assert.equal(m.boot_mount_heard, true);
   });
 
+  // Edit mode used to mount every station and give its navigator one live copy of the deck per slide
+  // (an iframe each): 68 iframes, 1.2 GB and second-long frames on a 68-slide deck. Now: posters.
+  test('edit mode: the navigator, scrolled end to end, holds posters, not decks', async () => {
+    const file = heavyDeck(PHOTOS);
+    const r = await runAsync(process.execPath, [join(ROOT, 'components/verify/memory.mjs'), file, '--edit', '--dwell', '150', '--json', file + '.json'],
+      { timeout: 300_000, env: { DECK_BROWSER: chrome } });
+    const m = JSON.parse(readFileSync(file + '.json', 'utf8'));
+    assert.equal(r.code, 0, r.out);
+    assert.equal(m.nav.items, TOTAL);
+    assert.equal(m.nav.iframes, 0, r.out);
+    assert.ok(m.nav.live_stations <= 5, r.out);
+    assert.ok(m.peak_live_stations <= 5, r.out);
+  });
+
+  // The mechanism behind "long decks stay light": three times the stations, nearly the same memory.
+  test('memory stays flat as the deck grows (21 vs 66 stations)', async () => {
+    const [small, big] = await Promise.all([walk(heavyDeck(15)), walk(heavyDeck(60))]);
+    assert.equal(small.code, 0, small.out); assert.equal(big.code, 0, big.out);
+    assert.ok(big.m.peak_live_stations <= 5, big.out);
+    assert.ok(big.m.page_renderer_peak_mb < small.m.page_renderer_peak_mb * 1.4,
+      `21 stations: ${small.m.page_renderer_peak_mb} MB, 66 stations: ${big.m.page_renderer_peak_mb} MB`);
+  });
+
   for (const split of [false, true]) {
     test(`a ${split ? 'streamed (--split)' : 'packed'} deck loads almost nothing up front and mounts every station`, async () => {
       const src = heavyDeck(PHOTOS);

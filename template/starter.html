@@ -441,9 +441,10 @@
      A station's own setup (measuring, inlining, wiring) belongs in its scene's mount(el), which runs
      on EVERY mount, or in a 'deck:mount' listener: code that walks all stations once at boot sees
      only the live ones. <html data-live="all"> keeps every station mounted (old-style decks whose
-     code does boot-time work per station), and edit mode switches to it. */
+     code does boot-time work per station). Edit mode works with the window too: it binds a station's
+     text when the station mounts, and its navigator shows server-rendered posters, not live copies. */
   const LIVE_SPAN = TOUCH ? 1 : 2, PREFETCH_SPAN = LIVE_SPAN + 2, FETCH_MS = 10000;
-  let liveAll = (document.documentElement.dataset.live || document.body.dataset.live) === 'all' || /[?&]edit=1(&|$)/.test(location.search);
+  let liveAll = (document.documentElement.dataset.live || document.body.dataset.live) === 'all';
   stations.forEach(s => {
     const tpl = s.el.querySelector(':scope > template[data-station]');
     if (tpl) { s.src = tpl.innerHTML; tpl.remove(); s.live = false; }
@@ -515,7 +516,10 @@
       if (!liveAll && s.src == null && near(k, i, PREFETCH_SPAN)) loadSrc(s);
     });
   }
-  // Everything mounted (edit mode, a full-deck export). One-way for the session: edits made in the
+  // A station's markup changed (edit mode saved it): the next mount uses the new text. The DOM of a
+  // mounted station is the editor's business; this only keeps a remount from bringing back old text.
+  function setSource(i, html) { const s = stations[i]; if (s && typeof html === 'string') s.src = html; }
+  // Everything mounted (a full-deck export, a deck whose code cannot use mount(el)). One-way for the session: edits made in the
   // DOM must not be swapped back for the authored text.
   function setLive(mode) {
     if (mode !== 'all') return Promise.resolve();
@@ -980,7 +984,7 @@
     cam, stations, world, viewport: viewportEl,
     current: () => cur, isBusy: () => busy, isOverview: () => overview, still: STILL,
     goto, toOverview, render, fitZoom, primeStation, revealStation, splitLines, fitHeading, releaseClips,
-    mountStation, setLive, isLive: i => !!(stations[i] && stations[i].live), liveSpan: LIVE_SPAN,
+    mountStation, setLive, setSource, isLive: i => !!(stations[i] && stations[i].live), liveSpan: LIVE_SPAN,
     setInset(px) { insetLeft = Math.max(0, +px || 0); refit(); },
     isPresenting: () => !!(document.fullscreenElement || document.webkitFullscreenElement),
   };
