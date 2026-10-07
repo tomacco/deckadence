@@ -12,11 +12,15 @@
 // It cannot check layout OVERFLOW — that needs a screenshot (components/verify/shoot.sh).
 
 import { readFileSync } from 'node:fs';
+import { inRuntime, inlineLocal, loaderFor, majorOf, pinOf, versionOf } from '../runtime/runtime.mjs';
 
 const file = process.argv[2] || 'deck/index.html';
+// The shared runtime (deckadence/) is read as if it were inline: every gate below checks the engine
+// the deck actually runs, wherever it lives.
+const raw = readFileSync(file, 'utf8'), rt = inlineLocal(raw, loaderFor(file), { only: inRuntime });
 // Strip HTML comments FIRST. Prose inside a comment ("change the <script src> below") is not
 // markup, and scanning it produces phantom scripts, ids and stations.
-const html = readFileSync(file, 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+const html = rt.html.replace(/<!--[\s\S]*?-->/g, '');
 let fail = 0, warned = 0;
 const bad = (...m) => { fail++; console.log('FAIL', ...m); };
 const warn = (...m) => { warned++; console.log('WARN', ...m); };   // reported, never gates
@@ -93,6 +97,15 @@ for (const s of keyed) {
     bad(`station ${s.id}: data-key "${s.key}" collides with a station id (#${s.key} is ambiguous)`);
 }
 if (keyed.length && !keyless.length && fail === keyFail0) ok(`every station keyed, keys unique and linkable (${keyed.length})`);
+
+/* ---------- shared runtime: present, and the major the deck is pinned to ---------- */
+for (const p of rt.missing) bad(`runtime: ${p} is missing beside the deck (node components/runtime/install.mjs ${file})`);
+{
+  const v = versionOf(js), pin = pinOf(raw);
+  if (v && pin !== majorOf(v)) bad(`runtime: the deck is pinned to ${pin ? 'runtime ' + pin : 'no runtime (no <html data-deckadence>)'} but runs ${v}`,
+    '(install the runtime its pin names, or port the deck and run install.mjs --major)');
+  else if (v) ok(`runtime ${v}, pinned to ${pin}` + (rt.inlined.length ? ` (${rt.inlined.join(', ')})` : ' (inline)'));
+}
 
 /* ---------- engine syntax ---------- */
 scripts.forEach((src, i) => {

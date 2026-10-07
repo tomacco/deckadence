@@ -10,14 +10,23 @@ export const TEMPLATE = join(ROOT, 'template/starter.html');
 export const LANDING = join(ROOT, 'docs/index.html');
 export const read = p => readFileSync(p, 'utf8');
 
-/** A scratch folder holding `index.html` (optionally transformed), with the landing's vendored
- *  anime.js beside it so browser tests never depend on a CDN. */
-export function scratchDeck(src = TEMPLATE, transform = s => s) {
+/** A scratch folder holding `index.html` (optionally transformed), its runtime (deckadence/, optionally
+ *  transformed: `runtime.js` / `runtime.css` edit the engine itself) and the landing's vendored anime.js. */
+export function scratchDeck(src = TEMPLATE, transform = s => s, runtime = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'deck-test-'));
   const html = transform(read(src));
   writeFileSync(join(dir, 'index.html'), html);
   cpSync(join(ROOT, 'docs/vendor'), join(dir, 'vendor'), { recursive: true });
+  copyRuntime(dirname(src), dir, runtime);
   return join(dir, 'index.html');
+}
+/** Copy a deck's runtime folder, applying `{ js, css }` transforms to deckadence.js / deckadence.css. */
+export function copyRuntime(fromDir, toDir, { js = s => s, css = s => s } = {}) {
+  const from = join(fromDir, 'deckadence'), to = join(toDir, 'deckadence');
+  if (!existsSync(from)) return;
+  cpSync(from, to, { recursive: true });
+  writeFileSync(join(to, 'deckadence.js'), js(read(join(from, 'deckadence.js'))));
+  writeFileSync(join(to, 'deckadence.css'), css(read(join(from, 'deckadence.css'))));
 }
 
 /** Replace exactly one occurrence, or throw: a mutation that silently misses would make a

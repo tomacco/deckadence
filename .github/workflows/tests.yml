@@ -33,7 +33,7 @@ jobs:
       - name: shell syntax
         run: bash -n components/verify/shoot.sh
       - name: static gates, edit source, edit server
-        run: node --test tests/gates.test.mjs tests/source.test.mjs tests/edit-server.test.mjs tests/stream.test.mjs
+        run: node --test tests/gates.test.mjs tests/source.test.mjs tests/edit-server.test.mjs tests/stream.test.mjs tests/runtime.test.mjs
 
   browser:
     name: browser · flash probe + live window

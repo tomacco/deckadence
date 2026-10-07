@@ -1,12 +1,49 @@
 # The Engine: Camera Over a World
 
-How the spatial deck works, from zero. The CORE engine (world, camera, fitZoom, goto,
-generic intro, HUD + windowed rail, full-screen toggle, overview, dive, deep links, scene
-registry, and the phone/iPad layer: swipe nav, letterbox mask, culling, rotate hint) ships
-working in `template/starter.html` — copy that file as your starting point; never rebuild the engine
-from scratch. Two features are **[ADD-ON]**s you splice in only when the talk needs them —
-the fly-through-overview move and the full-screen site showcase. Both live as real files in
-`components/addons/`, with their wiring in each file's header.
+How the spatial deck works, from zero. The engine (world, camera, fitZoom, goto, generic
+intro, HUD + windowed rail, full-screen toggle, overview, dive and through-overview flies, deep
+links, scene registry, live window, and the phone/iPad layer: swipe nav, letterbox mask,
+culling, rotate hint) is ONE shared runtime, `template/deckadence/`. A deck links it; it never
+carries a copy of its own. Start from `template/starter.html`, never rebuild the engine from
+scratch. The full-screen site showcase is an **[ADD-ON]** you add to the deck's own script
+only when the talk needs it (`components/addons/site-iframe.js`).
+
+## The runtime: one engine, every deck
+
+```
+deck/index.html            the design (:root tokens, type, per-station CSS), the stations, the deck's scenes
+deck/deckadence/           the runtime: deckadence.css (plane, frame, masks, HUD, phone chrome)
+                                        deckadence.js  (everything else)
+```
+
+- **Pinned by major.** `<html data-deckadence="2">` names the major the deck was built for. The
+  runtime logs an error when it does not match, and `check.mjs` fails the deck. Within a major
+  every change keeps decks working; anything that would break a deck's markup or scenes is a
+  new major.
+- **Installed, never edited.** `node components/runtime/install.mjs deck/index.html` copies the
+  current runtime into `deck/deckadence/` (refusing another major unless `--major` says the deck
+  was ported). That is how an engine fix reaches a deck without touching the deck's file;
+  `--check` exits 1 when a deck's copy is stale. In this repo the landing (`docs/`) carries a
+  copy for GitHub Pages and `tests/runtime.test.mjs` fails when it drifts from the template's.
+- **The deck's scripts come after the runtime.** They register scenes on `Deckadence.scenes`
+  (aliased `sceneRegistry`, the name `check.mjs` reads) and take what they need from
+  `window.Deckadence`: `MOTION`, `EASE`, `splitLines`, `fitHeading`, `releaseClips`,
+  `primeIntro`, `playIntro`, `stations`, `current()`, `step()`. The first reveal waits for
+  `DOMContentLoaded`, so every scene is registered before it runs. The deck's pace is
+  `<html data-pace="1.15">`.
+- **Hooks, not splices.** A deck cannot reach inside the engine, so the engine offers the
+  points a deck needs: a scene's `handleKey(dir)` sees every step (arrows and swipes) first and
+  consumes it by returning true; `deck:mount` / `deck:unmount` / `deck:arrive` / `deck:leave`
+  bubble from the station. A new kind of fly is a runtime change, not deck code.
+- **One file to share.** `node components/stream/pack.mjs deck/index.html` inlines the runtime
+  (and every other local script and stylesheet) into `deck/index.packed.html`, which presents
+  from `file://` with nothing beside it. `--split` keeps the runtime linked: a streamed deck is
+  served with its folder.
+- **An older deck** (engine pasted inline, no `data-deckadence`) still works and still passes
+  `check.mjs`; it just never receives a fix. To move it onto the runtime: keep its design CSS,
+  its stations and its scene code; delete the engine `<script>` and the engine CSS; link the
+  runtime and add the pin as the template does; open the scene code with the template's deck
+  prologue; run `install.mjs`, `check.mjs` and `flash.mjs`.
 
 ## Mental model
 
@@ -62,12 +99,12 @@ arrival (the reveal). A same-station replay (`Esc`/`↓`) has no flight to wait 
 tone and reveals immediately. A nav token guards both callbacks, so a fly the presenter
 interrupts never reveals over another station.
 
-**If you add a custom fly, it MUST dispatch the reveal itself** (call `done`, or
+**A new fly is a runtime change (`template/deckadence/deckadence.js`), and it MUST dispatch the reveal itself** (call `done`, or
 `revealStation(s)` in its `onComplete`), and it must be a branch inside `goto()` BELOW the
 `primeStation(s)` line, so the station is primed before the camera moves. A custom fly that early-returns past the reveal
 leaves the station arriving dead — this is the single easiest way to break the engine.
 
-`?still=1` short-circuits both moves: the camera jumps, `mid`/`done` fire synchronously, and
+`?still=1` short-circuits every move: the camera jumps, `mid`/`done` fire synchronously, and
 `playIntro` paints final states instead of animating. That mode is what makes screenshots
 usable (`pitfalls.md`, Tier 1); a scene whose CSS rest state is hidden can expose an
 optional `still(el)` to paint its own flat frame.
@@ -238,16 +275,14 @@ is refused.
 | `flyTo` | default station→station glide | single tween, ~1150 ms, signature ease |
 | `flyDive` | showcase arrivals (full-screen sites, reveals) | zoom out to ×0.34 of target, then push in; ~1750 ms total |
 | `toOverview` | the `O` key; orientation beats | fit the bounding box of ALL stations + 200px pad |
-| fly-through-overview **[ADD-ON]** | "look how far we've come" moments | overview tween → 480 ms hold → dive into target; fire the station intro as the camera arrives |
+| `flyThroughOverview` | "look how far we've come" moments (`data-fly="through-overview"`) | overview tween → 480 ms hold → dive into target; the station reveals as the camera arrives |
 
 Keep moves tasteful. The camera serves the narrative; Prezi-style vertigo is cheap. One
 spatial *flourish* per deck (an overview fly-through near the end) is usually enough.
 
-**[ADD-ON] fly-through-overview** — **code: `components/addons/fly-through-overview.js`**.
-Add it when one station should arrive "via the map": pull out to the overview, hold 480 ms
-(the hold IS the beat), then dive in. Its header carries the `goto()` wiring. Because it owns
-the whole move it must dispatch the reveal and the tone flip itself — that is what the
-`{ mid, done }` callbacks are for.
+**`data-fly="through-overview"`** makes one station arrive "via the map": pull out to the
+overview, hold 480 ms (the hold IS the beat), then dive in. It is a runtime fly like `dive`, so
+it primes, flips tone and reveals through the same `{ mid, done }` callbacks.
 
 ## Navigation & input (already wired in the template)
 

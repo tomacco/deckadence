@@ -173,9 +173,10 @@ The template exposes one surface for control layers:
 `isPresenting()`. The engine's keydown handler also ignores keys aimed at a text field or an
 editable element, so typing a space never advances the deck.
 
-**Keep these hooks when you rebuild the HUD or restyle the engine.** A deck without them still
-presents; it just cannot be edited (`check.mjs` notes it). A deck built from an older template
-needs these hooks spliced in before edit mode can work on it.
+The runtime (`deckadence/deckadence.js`) provides these hooks to every deck. A deck without them
+still presents; it just cannot be edited (`check.mjs` notes it). A deck built from a template
+older than the runtime carries its own engine: move it onto the runtime (`references/engine.md`)
+before edit mode can work on it.
 
 ## Traps this layer already steps around
 

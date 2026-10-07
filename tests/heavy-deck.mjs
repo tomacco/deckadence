@@ -5,8 +5,8 @@
 import { deflateSync } from 'node:zlib';
 import { mkdtempSync, writeFileSync, cpSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { ROOT, TEMPLATE, read } from './helpers.mjs';
+import { dirname, join } from 'node:path';
+import { ROOT, TEMPLATE, read, copyRuntime } from './helpers.mjs';
 
 const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
 const crc32 = buf => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
@@ -33,11 +33,13 @@ export function png(w = 1920, h = 1080) {
 }
 
 /** Write a deck folder: index.html (template + `extra` photo stations), photo.png, vendor/anime.
- *  `transform` edits the final HTML (e.g. add data-live="all"). Returns the index.html path. */
-export function heavyDeck(extra = 34, transform = s => s) {
+ *  `transform` edits the final HTML (e.g. add data-live="all"), `runtime` the engine ({ js, css }, see
+ *  copyRuntime). Returns the index.html path. */
+export function heavyDeck(extra = 34, transform = s => s, runtime = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'deck-heavy-'));
   writeFileSync(join(dir, 'photo.png'), png());
   cpSync(join(ROOT, 'docs/vendor'), join(dir, 'vendor'), { recursive: true });
+  copyRuntime(dirname(TEMPLATE), dir, runtime);
   let x = 6900, y = 2900;
   const more = Array.from({ length: extra }, (_, k) => {
     if (k % 2) y += 1450; else x += 2300;                     // monotone staircase: right, down, right, …
