@@ -109,9 +109,6 @@
     on = v;
     document.body.classList.toggle('dk-on', on);
     if (on) {
-      // every station in the DOM first: edits address the authored markup (inline and template stations
-      // mount synchronously; this waits for any that are still on their way)
-      Promise.resolve(D.setLive && D.setLive('all')).then(() => { if (on) refresh(); });
       connect(); refresh(); setTool(tool); setNav(navOpen);
       raf = requestAnimationFrame(tick);
     } else {
@@ -158,6 +155,9 @@
     else if (toastEl.dataset.sticky) { toastEl.classList.remove('show'); delete toastEl.dataset.sticky; status('', 'Ready'); }
     bindUnits(); renderPins(); updateInbox();
     if (navOpen) renderNav(true);
+    // the overview shows every frame at once: dormant ones get their poster (the engine applies
+    // data-poster only while the overview is up), so the map is the real deck without mounting it
+    if (st.posters) for (const o of st.order) { const s = byId(o.id); if (s && o.poster) s.el.dataset.poster = `/__deck/poster/${encodeURIComponent(o.id)}?h=${o.poster}`; }
     if (card && card.kind === 'thread') { const c = findC(card.id); c ? openThread(c, true) : closeCard(); }
   }
   function connect() {
@@ -175,10 +175,14 @@
     location.reload();
   }
 
-  /* ---------- editable text units ---------- */
+  /* ---------- editable text units ----------
+     Only the stations near the camera are in the DOM (the engine's live window), so units are bound
+     per station, now for the mounted ones and again whenever one mounts. An edit in progress is
+     committed before its station leaves the DOM. */
   function bindUnits() {
     document.querySelectorAll('.dk-editable').forEach(e => { if (e !== (editing && editing.el)) { e.classList.remove('dk-editable'); delete e.__dkUnit; } });
     for (const s of D.stations) {
+      if (s.live === false) continue;
       for (const u of (st.map[s.el.id] || [])) {
         let el = s.el;
         for (const k of u.path) { el = el && el.children[k]; }
@@ -187,6 +191,8 @@
       }
     }
   }
+  document.addEventListener('deck:mount', () => { if (on && st) bindUnits(); });
+  document.addEventListener('deck:unmount', e => { if (editing && e.target.contains(editing.el)) commitEdit(false); });
   const isHeading = el => el.hasAttribute('data-split') || /^H[1-6]$/.test(el.tagName);
   // Put a unit back to rest from its SOURCE markup: headings are re-split and re-fitted from
   // scratch (fitHeading only ever shrinks, so the old size must be cleared first).
@@ -224,7 +230,12 @@
     paint(el, html);                                   // optimistic: show it while it saves
     status('saving', 'Saving…');
     const r = await api('text', { key: unit.key, base: unit.html, html, selector: selectorFor(el, byId(unit.key.split(':')[0]).el) });
-    if (r.ok) { unit.html = r.html ?? unit.html; paint(el, unit.html); status('saved', 'Saved'); reloadThumb(unit.key.split(':')[0]); }
+    if (r.ok) {
+      unit.html = r.html ?? unit.html; paint(el, unit.html); status('saved', 'Saved');
+      const sid = r.station || unit.key.split(':')[0], i = D.stations.findIndex(s => s.el.id === sid);
+      if (r.inner != null && i >= 0 && D.setSource) D.setSource(i, r.inner);   // a remount shows the edit, not the old text
+      reloadThumb(sid, r.poster);
+    }
     else { paint(el, unit.html); status('error', 'Not saved'); toast(r.error || 'Not saved', true); if (r.status === 409) refresh(); }
     afterEdit();
   }
@@ -451,26 +462,24 @@
     }
     listEl.textContent = '';
     if (io) io.disconnect();
-    io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { const f = e.target.querySelector('iframe'); if (!f.src) f.src = f.dataset.src; io.unobserve(e.target); } }), { root: listEl, rootMargin: '200px' });
+    // A thumbnail is a POSTER (a small PNG the edit server renders and caches), loaded as it nears the
+    // viewport. Never a live copy of the deck: one iframe per slide was the whole deck N times over.
+    io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { const f = e.target.querySelector('img'); if (f && !f.src && f.dataset.src) f.src = f.dataset.src; io.unobserve(e.target); } }), { root: listEl, rootMargin: '400px' });
     order.forEach((o, k) => {
       const n = $('div', 'dk-slide'); n.dataset.id = o.id; n.draggable = true; n.tabIndex = 0;
       n.setAttribute('aria-label', `${k + 1}: ${o.key ? o.key + ' · ' : ''}${o.name}`);
-      n.innerHTML = `<div class="dk-num">${String(k + 1).padStart(2, '0')}</div><div class="dk-thumb"><iframe tabindex="-1" loading="lazy" title="${esc(o.name)}"></iframe></div>
+      n.innerHTML = `<div class="dk-num">${String(k + 1).padStart(2, '0')}</div><div class="dk-thumb"><span class="dk-ph">${esc(o.key || o.id)}</span><img alt="" decoding="async"></div>
         <div class="dk-meta"><span class="dk-name">${esc(o.name)}</span><span class="dk-sid" title="id ${esc(o.id)}">${esc(o.key || o.id)}</span><span class="dk-cc" style="${counts[o.id] ? '' : 'display:none'}">${counts[o.id] || ''}</span></div>`;
-      const f = n.querySelector('iframe');
-      f.dataset.src = `${location.pathname}?still=1&dk=thumb#${encodeURIComponent(o.id)}`;
-      f.onload = () => setTimeout(() => f.classList.add('ready'), 350);
+      const f = n.querySelector('img');
+      if (st.posters && o.poster) f.dataset.src = `/__deck/poster/${encodeURIComponent(o.id)}?h=${o.poster}`;
+      f.onload = () => f.classList.add('ready');
+      f.onerror = () => f.removeAttribute('src');             // no Chrome on the server: the key placeholder stays
       n.addEventListener('click', () => { const i = D.stations.findIndex(s => s.el.id === o.id); if (i >= 0 && !D.isBusy()) D.goto(i); });
       n.addEventListener('dragstart', e => { dragId = o.id; n.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', o.id); });
       n.addEventListener('dragend', () => { n.classList.remove('dragging'); dropEl.remove(); dragId = null; });
       listEl.appendChild(n); io.observe(n);
     });
-    scaleThumbs(); markCurrent(true);
-  }
-  function scaleThumbs() {
-    const t = listEl.querySelector('.dk-thumb'); if (!t) return;
-    const k = t.clientWidth / 1920;
-    listEl.querySelectorAll('.dk-thumb iframe').forEach(f => { f.style.transform = `scale(${k})`; });
+    markCurrent(true);
   }
   let lastCur = -1;
   function markCurrent(force) {
@@ -480,9 +489,13 @@
     const cur = listEl.querySelector('.dk-slide.current');
     if (cur && !force) cur.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
-  function reloadThumb(id) {
-    const f = listEl.querySelector(`.dk-slide[data-id="${CSS.escape(id)}"] iframe`);
-    if (f && f.src) { f.classList.remove('ready'); f.src = f.dataset.src.replace('?still=1', `?still=1&v=${Date.now()}`); }
+  function reloadThumb(id, poster) {
+    const f = listEl.querySelector(`.dk-slide[data-id="${CSS.escape(id)}"] img`);
+    const o = st && st.order.find(x => x.id === id);
+    if (!f || !poster || !st.posters) return;
+    if (o) o.poster = poster;
+    f.dataset.src = `/__deck/poster/${encodeURIComponent(id)}?h=${poster}`;
+    if (f.src) { f.classList.remove('ready'); f.src = f.dataset.src; }
   }
   listEl.addEventListener('dragover', e => {
     if (!dragId) return; e.preventDefault();
@@ -590,7 +603,6 @@
 
   // A presentation owns the screen: entering full screen turns edit mode off.
   ['fullscreenchange', 'webkitfullscreenchange'].forEach(ev => document.addEventListener(ev, () => { if (D.isPresenting() && on) setOn(false); }));
-  window.addEventListener('resize', () => { if (navOpen) scaleThumbs(); });
 
   /* ---------- boot ---------- */
   const saved = session.get();

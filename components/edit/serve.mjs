@@ -15,10 +15,11 @@
 //         same-origin JSON POSTs (see the http section and references/edit.md).
 
 import { createServer } from 'node:http';
-import { readFileSync, existsSync, statSync, watch } from 'node:fs';
+import { readFileSync, existsSync, statSync, watch, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve, dirname, basename, extname, join, sep } from 'node:path';
 import { createHash } from 'node:crypto';
-import { execSync } from 'node:child_process';
+import { execSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as S from './source.mjs';
 import * as R from './sidecar.mjs';
@@ -77,6 +78,50 @@ function backfillKeys() {
 }
 backfillKeys();
 
+/* ---------- posters: one small still per station, for the navigator ----------
+   The navigator used to embed a live copy of the WHOLE deck per slide (an iframe each), so scrolling
+   it built N decks in one tab: 1.2 GB and second-long frames on a 68-slide deck. A poster is a PNG
+   that headless Chrome renders from `?still=1&dk=thumb#id` (no remote debugging), cached on disk by
+   a hash of what can change it: the station's own markup and the deck around the stations (CSS,
+   scripts). Editing one station re-renders that station's poster only. Two renders at a time. */
+const POSTER_W = 640, POSTER_H = 360, POSTER_DIR = join(tmpdir(), 'deckadence-posters', hash(DECK));
+const CHROME = [process.env.DECK_BROWSER, '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium',
+  '/usr/bin/chromium-browser', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].filter(Boolean).find(existsSync);
+/** id → poster hash, for every station in `html`. The shell is the deck with every station emptied. */
+function posterKeys(html, list = S.stations(html)) {
+  let shell = html;
+  for (const st of [...list].reverse()) shell = shell.slice(0, st.el.openEnd) + shell.slice(st.el.closeStart);
+  const sh = hash(shell);
+  return Object.fromEntries(list.map(st => [st.id, hash(sh + html.slice(st.el.start, st.el.end))]));
+}
+const posterJobs = new Map(); let posterRunning = 0; const posterQueue = [];
+function renderPoster(id, h) {
+  const file = join(POSTER_DIR, h + '.png');
+  if (existsSync(file)) return Promise.resolve(file);
+  if (posterJobs.has(h)) return posterJobs.get(h);
+  const job = new Promise(done => {
+    const run = () => {
+      posterRunning++;
+      mkdirSync(POSTER_DIR, { recursive: true });
+      const tmp = file + '.' + process.pid + '.png', profile = mkdtempSync(join(tmpdir(), 'deck-poster-'));
+      const p = spawn(CHROME, ['--headless=new', '--hide-scrollbars', `--window-size=${POSTER_W},${POSTER_H}`, `--user-data-dir=${profile}`,
+        '--virtual-time-budget=4000', `--screenshot=${tmp}`, `http://127.0.0.1:${PORT}/${encodeURIComponent(PAGE)}?still=1&dk=thumb#${encodeURIComponent(id)}`], { stdio: 'ignore' });
+      let last = -1;    // a managed Chrome may linger after writing: stop it once the PNG is stable
+      const poll = setInterval(() => { const n = existsSync(tmp) ? statSync(tmp).size : -1; if (n > 0 && n === last) p.kill(); last = n; }, 300);
+      const guard = setTimeout(() => p.kill(), 60_000);
+      p.on('exit', () => {
+        clearInterval(poll); clearTimeout(guard); rmSync(profile, { recursive: true, force: true });
+        try { if (existsSync(tmp)) R.writeAtomic(file, readFileSync(tmp)); rmSync(tmp, { force: true }); } catch (e) {}
+        posterRunning--; posterJobs.delete(h); done(existsSync(file) ? file : null);
+        const next = posterQueue.shift(); if (next) next();
+      });
+    };
+    posterRunning < 2 ? run() : posterQueue.push(run);
+  });
+  posterJobs.set(h, job);
+  return job;
+}
+
 /* ---------- state the layer needs ---------- */
 function state() {
   const html = readDeck();
@@ -85,7 +130,8 @@ function state() {
   try { review = R.load(DECK); }
   catch (e) { reviewError = e.message; review = { format: R.FORMAT, deck: PAGE, comments: [], edits: [] }; }
   return { deck: PAGE, author: AUTHOR, version: hash(html),
-           order: S.stations(html, tree).map(s => ({ id: s.id, key: s.key, name: s.name })),
+           order: (list => { const ph = posterKeys(html, list); return list.map(s => ({ id: s.id, key: s.key, name: s.name, poster: ph[s.id] })); })(S.stations(html, tree)),
+           posters: !!CHROME,
            map: S.editMap(html, tree), review, reviewError };
 }
 
@@ -100,7 +146,11 @@ const actions = {
     d.edits.push({ id: R.nextId('e', d.edits), kind: 'text', at: R.now(), author: AUTHOR, station: r.station,
                    ...(r.stationKey ? { stationKey: r.stationKey } : {}), key: b.key, selector: b.selector ? String(b.selector) : null, before: r.before, after: r.after });
     commit(d, r.html, html);
-    return { body: { ok: true, html: r.after, version: hash(r.html) } };
+    // the station's whole new markup, so the engine remounts it with the edit (live window), and its
+    // new poster hash, so the navigator shows the edit
+    const list = S.stations(r.html), st = S.findStation(list, { station: r.station, stationKey: r.stationKey || null });
+    return { body: { ok: true, html: r.after, version: hash(r.html), station: st && st.id,
+                     inner: st ? S.inner(r.html, st.el) : null, poster: st ? posterKeys(r.html, list)[st.id] : null } };
   }),
   // { order: [ids] } — reorder + staircase relayout, ids stay stable
   reorder: b => locked(d => {
@@ -258,6 +308,17 @@ function handle(req, res) {
     res.write('retry: 1500\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return;
   }
   if (p === '/__deck/state') return json(res, 200, state());
+  if (p.startsWith('/__deck/poster/') && req.method === 'GET') {
+    const id = p.slice('/__deck/poster/'.length), h = url.searchParams.get('h') || '';
+    if (!CHROME) return json(res, 404, { error: 'no Chrome to render posters (set DECK_BROWSER)' });
+    if (!/^[0-9a-f]{12}$/.test(h) || !S.stations(readDeck()).some(st => st.id === id)) return json(res, 404, { error: 'no such poster' });
+    renderPoster(id, h).then(file => {
+      if (!file) return json(res, 503, { error: 'poster render failed' });
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=31536000, immutable' });   // the hash is in the URL
+      res.end(readFileSync(file));
+    });
+    return;
+  }
   if (p === '/__deck/edit.js' || p === '/__deck/edit.css') {
     res.writeHead(200, { 'Content-Type': TYPES[extname(p)], ...NOCACHE });
     return res.end(readFileSync(join(HERE, basename(p))));

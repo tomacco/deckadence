@@ -54,8 +54,12 @@ The toolbar is the black pill at the top. A vermilion hairline around the stage 
   a second decision (a double click, a second tab) with 409 and keeps the first.
   The toolbar counts open comments, and a red `needs you` flags proposals that are waiting on
   the human. Click it to jump from one to the next.
-- **Slides · `N`**: a sidebar of thumbnails. Each one is the deck itself in flat mode
-  (`?still=1`), so it shows final states and never catches a station mid-animation. The stage
+- **Slides · `N`**: a sidebar of thumbnails. Each one is a **poster**: a small PNG the edit
+  server renders from the deck in flat mode (`?still=1`) with headless Chrome, so it shows final
+  states and never catches a station mid-animation. Posters are cached on disk by a hash of the
+  station's markup and the deck around it, so an edit re-renders only its own station's poster.
+  (Thumbnails used to be live copies of the whole deck, one per slide: 1.2 GB on a 68-slide deck.)
+  Without Chrome on the server the sidebar shows each station's key instead. The stage
   shrinks to make room. Each thumbnail is labelled with the station's **key** (its id when it
   has none), the name you say in review. Drag a slide to reorder it, or use `Alt+↑/↓` on a
   focused slide.

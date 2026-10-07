@@ -16,9 +16,9 @@ const skip = !chrome && 'no Chrome/Chromium found (set DECK_BROWSER)';
 const PHOTOS = 20;                                   // + the template's 6 = 26 stations
 const TOTAL = PHOTOS + 6;
 
-async function walk(file) {
+async function walk(file, extra = []) {
   const out = join(mkdtempSync(join(tmpdir(), 'deck-mem-')), 'mem.json');
-  const r = await runAsync(process.execPath, [join(ROOT, 'components/verify/memory.mjs'), file, '--dwell', '250', '--json', out],
+  const r = await runAsync(process.execPath, [join(ROOT, 'components/verify/memory.mjs'), file, '--dwell', '250', '--json', out, ...extra],
     { timeout: 300_000, env: { DECK_BROWSER: chrome } });
   let m = null; try { m = JSON.parse(readFileSync(out, 'utf8')); } catch (e) {}
   return { ...r, m };
@@ -87,6 +87,41 @@ describe('live window (memory.mjs walks every station)', { concurrency: 3, skip 
     const { code, out, m } = await walk(heavyDeck(2));
     assert.equal(code, 0, out);
     assert.equal(m.boot_mount_heard, true);
+  });
+
+  // Edit mode used to mount every station and give its navigator one live copy of the deck per slide
+  // (an iframe each): 68 iframes, 1.2 GB and second-long frames on a 68-slide deck. Now: posters.
+  test('edit mode: the navigator, scrolled end to end, holds posters, not decks', async () => {
+    const file = heavyDeck(PHOTOS);
+    const r = await runAsync(process.execPath, [join(ROOT, 'components/verify/memory.mjs'), file, '--edit', '--dwell', '150', '--json', file + '.json'],
+      { timeout: 300_000, env: { DECK_BROWSER: chrome } });
+    const m = JSON.parse(readFileSync(file + '.json', 'utf8'));
+    assert.equal(r.code, 0, r.out);
+    assert.equal(m.nav.items, TOTAL);
+    assert.equal(m.nav.iframes, 0, r.out);
+    assert.ok(m.nav.live_stations <= 5, r.out);
+    assert.ok(m.peak_live_stations <= 5, r.out);
+  });
+
+  // The mechanism behind "long decks stay light": three times the stations, nearly the same memory HELD.
+  // Without a GPU (CI), Chrome keeps every decoded photo in purgeable cache until memory pressure, so
+  // the resident size grows with photos SEEN; where it can, the test applies critical pressure and
+  // compares what is left. Where it cannot (remote debugging refused), it compares the peaks.
+  test('memory held stays near flat as the deck grows (21 vs 66 stations)', async () => {
+    const [small, big] = await Promise.all([walk(heavyDeck(15), ['--pressure']), walk(heavyDeck(60), ['--pressure'])]);
+    assert.equal(small.code, 0, small.out); assert.equal(big.code, 0, big.out);
+    const p = r => r.m.pressure && r.m.pressure.available ? `, after pressure ${r.m.pressure.after_mb}` : '';
+    console.log(`# memory flat: 21 stations peak ${small.m.page_renderer_peak_mb} MB${p(small)}; 66 stations peak ${big.m.page_renderer_peak_mb} MB${p(big)}`);
+    assert.ok(big.m.peak_live_stations <= 5, big.out);
+    if (small.m.pressure && small.m.pressure.available && big.m.pressure && big.m.pressure.available) {
+      // what stays after pressure may grow a little per station (each file's bytes in Chrome's resource
+      // cache, the frame, the rail dot), never by a decoded photo (8 MB here) per station seen
+      const perStation = (big.m.pressure.after_mb - small.m.pressure.after_mb) / 45;
+      assert.ok(perStation < 2.5, `held memory grows ${perStation.toFixed(1)} MB per station (a decoded photo is 8 MB)`);
+    } else {
+      assert.ok(big.m.page_renderer_peak_mb < small.m.page_renderer_peak_mb * 1.4,
+        `21 stations: ${small.m.page_renderer_peak_mb} MB, 66 stations: ${big.m.page_renderer_peak_mb} MB`);
+    }
   });
 
   for (const split of [false, true]) {
