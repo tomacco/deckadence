@@ -2,19 +2,17 @@
  * WHAT   : the tension reveal. Arriving, the station shows only its heading; the presenter's
  *          first → reveals the payload; the next → moves on. Award winners, answers to a
  *          posed question, the number behind a claim.
- * SPLICE : into the engine <script>, next to the other scenes.
- * NEEDS  : sceneRegistry, stations, cur, animate, utils, MOTION, primeIntro, playIntro
+ * SPLICE : into the deck's own <script> (after the runtime), next to its other scenes.
+ * NEEDS  : the prologue the template's deck script opens with, plus
+ *            const { stations, current, primeIntro, playIntro } = Deckadence;
  * MARKUP : <section class="station" id="s9" data-name="The answer" data-scene="reveal"
  *            data-x="…" data-y="…">
  *            <h2 class="display d-l" data-split="lines">The question</h2>
  *            <div class="payload">…the reveal…</div>
  *          </section>
  *          Use NO data-fly — the default pan already dispatches run() on arrival.
- * WIRE   : in the keydown handler, BEFORE next()/prev():
- *            const sc = sceneRegistry[stations[cur].el.dataset.scene || ''];
- *            if (sc && sc.handleKey && sc.handleKey(e.key === 'ArrowLeft' ? -1 : 1)) {
- *              e.preventDefault(); return;
- *            }
+ * WIRE   : nothing. The runtime's step() (arrows and swipes) offers every step to the current
+ *          scene's handleKey(dir) first.
  * WHY one scene for many stations: handleKey returning true/false is the whole contract —
  *          true consumes the keypress (reveal), false lets the engine navigate. Every
  *          instance then behaves identically through one code path.
@@ -43,7 +41,7 @@ sceneRegistry.reveal = {
   },
 
   handleKey(dir) {
-    const el = stations[cur].el;
+    const el = stations[current()].el;
     if (dir > 0 && !el.dataset.shown) {
       el.dataset.shown = '1';
       const pay = el.querySelectorAll('.payload');

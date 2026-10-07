@@ -1,6 +1,6 @@
 /* COMPONENT: iso-box (isometric primitives)
  * WHAT   : projector + box + wheel helpers for isometric scenes.
- * SPLICE : into the engine <script>, near your scene code.
+ * SPLICE : into the deck's own <script> (after the runtime), near your scene code.
  * NEEDS  : nothing (pure geometry — returns SVG point strings).
  *
  * READ THIS FIRST — isometric is for PHYSICAL space only: a factory floor, a building,

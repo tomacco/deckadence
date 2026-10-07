@@ -1,7 +1,8 @@
 /* COMPONENT: site-iframe
  * WHAT   : a station that IS a real website — dive in, then auto-scroll the page content.
- * SPLICE : into the engine <script>, after the scene registry.
- * NEEDS  : animate, MOTION, cur, overview, stations
+ * SPLICE : into the deck's own <script> (after the runtime). Self-wiring: it listens to the
+ *          runtime's station events, so nothing else changes.
+ * NEEDS  : animate (anime.js), Deckadence (current, isOverview)
  * MARKUP : <section class="station site-full" id="s7" data-name="Demo site"
  *            data-x="…" data-y="…" data-fly="dive" data-scroll="6000">
  *            <iframe class="site-frame" src="../sites/demo/index.html"></iframe>
@@ -9,11 +10,9 @@
  * CSS    : .station.site-full { padding: 0; overflow: hidden; }
  *          .site-frame { position:absolute; top:0; left:0; width:1920px; height:1080px;
  *                        border:0; pointer-events:none; background:#fff; }
- * WIRE   : at boot   document.querySelectorAll('.site-frame')
- *                      .forEach(f => f.addEventListener('load', () => sizeSiteFrame(f)));
- *          in goto() call stopSiteScroll() next to the scene stops, and start the scroll
- *          from the fly's `done` callback (it already fires on arrival):
- *            if (s.el.dataset.scroll) setTimeout(() => runSiteScroll(s), 350);
+ * WIRE   : none: the listeners at the bottom of this file. deck:mount sizes a frame each time its
+ *          station is mounted (the live window releases far stations), deck:leave stops the
+ *          scroll, deck:arrive starts it.
  * SAME-ORIGIN ONLY: serve the deck and the embedded sites from one local server.
  */
 
@@ -50,14 +49,22 @@ function runSiteScroll(s) {
   sizeSiteFrame(f);                          // recompute now that fonts/images settled
   const dist = +f.dataset.dist || 0;
   if (dist <= 0) return;                     // the scroll IS content — runs under reduced-motion too
-  const token = cur, proxy = { y: 0 };
+  const token = Deckadence.current(), proxy = { y: 0 };
   siteScrollAnim = animate(proxy, {
     y: dist, duration: +s.el.dataset.scroll || 6000, ease: 'inOutSine',
     // behavior:'auto' is MANDATORY — it overrides the page's own scroll-behavior:smooth,
     // which otherwise fights per-frame updates (stutter, then snap).
     onUpdate: () => {
-      if (cur !== token || overview) { stopSiteScroll(); return; }   // left the station
+      if (Deckadence.current() !== token || Deckadence.isOverview()) { stopSiteScroll(); return; }   // left the station
       try { win.scrollTo({ top: proxy.y, behavior: 'auto' }); } catch (e) {}
     }
   });
 }
+
+document.addEventListener('deck:mount', e => e.target.querySelectorAll('.site-frame')
+  .forEach(f => f.addEventListener('load', () => sizeSiteFrame(f))));
+document.addEventListener('deck:leave', stopSiteScroll);
+document.addEventListener('deck:arrive', e => {
+  const s = Deckadence.stations.find(t => t.el === e.target);
+  if (s && s.el.dataset.scroll) setTimeout(() => runSiteScroll(s), 350);
+});

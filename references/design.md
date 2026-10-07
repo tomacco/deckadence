@@ -32,7 +32,7 @@ Never silently default to the same direction every time — that is exactly the
 ## The directions
 
 Each direction is applied by swapping THREE things in the template: the listed `:root`
-tokens, the font `<link>` (all fonts below are on Google Fonts), and the `PACE` constant
+tokens, the font `<link>` (all fonts below are on Google Fonts), and `data-pace` on `<html>`
 (the direction's motion personality). Tokens a direction doesn't list — `--line`,
 `--ease-expo` — keep their template defaults unless noted.
 
@@ -64,7 +64,7 @@ Expressive serif display over warm paper. Reads like a magazine cover per statio
 --font-display:"Fraunces",serif; --font-body:"Inter",sans-serif;
 --display-transform:none; --display-weight:600; --display-tracking:-.03em;
 ```
-Motion: slower, softer line-rise (`PACE = 1.15`); italic `<em>` accents; generous holds.
+Motion: slower, softer line-rise (`data-pace="1.15"`); italic `<em>` accents; generous holds.
 
 ### 3. Terminal — security, infra, dev tooling, anything that ships in a shell
 Mono everything, phosphor accent on near-black. Cursor-blink energy.
@@ -75,7 +75,7 @@ Mono everything, phosphor accent on near-black. Cursor-blink energy.
 --display-transform:uppercase; --display-weight:800; --display-tracking:0;
 ```
 Dark-first: use `.station.invert` for the light stations. Motion: typewriter/step reveals
-read well here; keep line-rise snappy (`PACE = 0.85`).
+read well here; keep line-rise snappy (`data-pace="0.85"`).
 
 ### 4. Swiss — data, corporate, quarterly truth-telling
 Grid discipline, one red, no decoration. Information is the aesthetic.
@@ -107,7 +107,7 @@ Near-black velvet, one metallic accent, serif display. Decadent, cinematic.
 --display-transform:none; --display-weight:500; --display-tracking:-.02em;
 ```
 Dark-first: use `.station.invert` for the light stations (and darken the gold accent on
-them — metallics wash out on ivory). Motion: slow (`PACE = 1.25`), long holds, gold SVG
+them — metallics wash out on ivory). Motion: slow (`data-pace="1.25"`), long holds, gold SVG
 stroke-draws as the signature flourish.
 
 ### 7. Gallery — keynotes, board rooms, portfolio reviews, anything that must feel considered
@@ -123,7 +123,7 @@ last. The Deckadence landing page is the reference build (`docs/index.html`).
 ```
 Font link: `family=Newsreader:ital,opsz,wght@0,6..72,300..600;1,6..72,300..500&family=Inter:wght@400..700`,
 and set `font-variation-settings:'opsz' 72` on `.display` so the large sizes use the display
-cut. Italic `<em>` carries the emphasis (never the accent). Motion: unhurried (`PACE = 1.15`),
+cut. Italic `<em>` carries the emphasis (never the accent). Motion: unhurried (`data-pace="1.15"`),
 hairline SVG drawings, long holds; the dark `.station.invert` is the projection room.
 
 ## Rules that hold in EVERY direction

@@ -6,6 +6,8 @@ import { pack, fragmentName } from '../components/stream/pack.mjs';
 import * as S from '../components/edit/source.mjs';
 
 const html = read(TEMPLATE);
+// a deck from before the live window: its own inline engine, no mountStation, no shared runtime
+const preWindow = once(html, '<script src="deckadence/deckadence.js"></script>', '<script>/* an engine that predates the live window */</script>');
 
 test('pack (default) wraps every station, byte-for-byte, in <template data-station>', () => {
   const src = S.stations(html), out = pack(html).html, packed = S.stations(out);
@@ -61,7 +63,7 @@ test('edit mode refuses a packed or streamed deck (edit the source, pack again)'
 });
 
 test('pack refuses what it cannot stream', () => {
-  assert.throws(() => pack(read(LANDING)), /no live window/);                 // an engine that predates mountStation
+  assert.throws(() => pack(preWindow), /no live window/);                     // an engine that predates mountStation
   assert.throws(() => pack(pack(html).html), /already packed/);                // packing twice
   const dup = once(html, 'data-key="LYRA"', 'data-key="VEGA"');
   assert.throws(() => pack(dup, { split: true }), /share the fragment VEGA\.html/);
@@ -80,13 +82,13 @@ test('check.mjs: the template passes the live-window gate', () => {
 });
 
 test('check.mjs: an engine with the window but no paint gate FAILS', () => {
-  const r = check(scratchDeck(TEMPLATE, s => once(s, '  body:not(.deck-ready) #world { visibility: hidden; }', '')));
+  const r = check(scratchDeck(TEMPLATE, undefined, { css: s => once(s, 'body:not(.deck-ready) #world { visibility: hidden; }', '') }));
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /FAIL live window: the plane can paint before the engine runs/);
 });
 
 test('check.mjs: an engine without the window only WARNS (old decks still pass)', () => {
-  const r = check(LANDING);
+  const r = check(scratchDeck(TEMPLATE, undefined, { js: s => once(s, 'function mountStation(', 'function mountOld(') }));
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /WARN live window: this engine keeps every station in memory/);
 });
