@@ -496,11 +496,20 @@
     const settle = () => { s.mounted = true; s.mounting = null; return true; };
     return (s.mounting = r.then(settle, e => { console.error('[deckadence] mount failed:', s.key || s.el.id, e); return settle(); }));
   }
+  // Removing an element does not free what it decoded: Chrome keeps a removed <img>'s pixels until
+  // memory pressure, so a deck's RSS still grew with every photo the presenter had seen (Linux CI:
+  // 386 MB at 21 stations, 760 MB at 66). Point media at nothing first, then remove it.
+  function releaseMedia(el) {
+    el.querySelectorAll('img').forEach(i => { i.removeAttribute('srcset'); i.src = 'data:,'; });
+    el.querySelectorAll('video, audio').forEach(m => { try { m.pause(); m.removeAttribute('src'); m.querySelectorAll('source').forEach(x => x.remove()); m.load(); } catch (e) {} });
+    el.querySelectorAll('iframe').forEach(f => { f.src = 'about:blank'; });
+  }
   function unmountStation(s) {
     if (!s.live || liveAll || s.mounting) return;
     const sc = sceneOf(s);
     if (s.mounted && sc && sc.unmount) sc.unmount(s.el);
     if (s.mounted) s.el.dispatchEvent(new CustomEvent('deck:unmount', { bubbles: true, detail: { key: s.key, id: s.el.id } }));
+    releaseMedia(s.el);
     s.el.replaceChildren();
     s.live = false; s.mounted = false; s.primed = false;
     s.el.classList.add('dormant');

@@ -107,6 +107,7 @@ describe('live window (memory.mjs walks every station)', { concurrency: 3, skip 
   test('memory stays flat as the deck grows (21 vs 66 stations)', async () => {
     const [small, big] = await Promise.all([walk(heavyDeck(15)), walk(heavyDeck(60))]);
     assert.equal(small.code, 0, small.out); assert.equal(big.code, 0, big.out);
+    console.log(`# memory flat: 21 stations ${small.m.page_renderer_peak_mb} MB (final ${small.m.page_renderer_final_mb}), 66 stations ${big.m.page_renderer_peak_mb} MB (final ${big.m.page_renderer_final_mb})`);
     assert.ok(big.m.peak_live_stations <= 5, big.out);
     assert.ok(big.m.page_renderer_peak_mb < small.m.page_renderer_peak_mb * 1.4,
       `21 stations: ${small.m.page_renderer_peak_mb} MB, 66 stations: ${big.m.page_renderer_peak_mb} MB`);
