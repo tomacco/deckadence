@@ -16,9 +16,9 @@ const skip = !chrome && 'no Chrome/Chromium found (set DECK_BROWSER)';
 const PHOTOS = 20;                                   // + the template's 6 = 26 stations
 const TOTAL = PHOTOS + 6;
 
-async function walk(file) {
+async function walk(file, extra = []) {
   const out = join(mkdtempSync(join(tmpdir(), 'deck-mem-')), 'mem.json');
-  const r = await runAsync(process.execPath, [join(ROOT, 'components/verify/memory.mjs'), file, '--dwell', '250', '--json', out],
+  const r = await runAsync(process.execPath, [join(ROOT, 'components/verify/memory.mjs'), file, '--dwell', '250', '--json', out, ...extra],
     { timeout: 300_000, env: { DECK_BROWSER: chrome } });
   let m = null; try { m = JSON.parse(readFileSync(out, 'utf8')); } catch (e) {}
   return { ...r, m };
@@ -103,14 +103,18 @@ describe('live window (memory.mjs walks every station)', { concurrency: 3, skip 
     assert.ok(m.peak_live_stations <= 5, r.out);
   });
 
-  // The mechanism behind "long decks stay light": three times the stations, nearly the same memory.
+  // The mechanism behind "long decks stay light": three times the stations, nearly the same memory HELD.
+  // Without a GPU (CI), Chrome keeps every decoded photo in purgeable cache until memory pressure, so
+  // the resident size grows with photos SEEN; where it can, the test applies critical pressure and
+  // compares what is left. Where it cannot (remote debugging refused), it compares the peaks.
   test('memory stays flat as the deck grows (21 vs 66 stations)', async () => {
-    const [small, big] = await Promise.all([walk(heavyDeck(15)), walk(heavyDeck(60))]);
+    const [small, big] = await Promise.all([walk(heavyDeck(15), ['--pressure']), walk(heavyDeck(60), ['--pressure'])]);
     assert.equal(small.code, 0, small.out); assert.equal(big.code, 0, big.out);
-    console.log(`# memory flat: 21 stations ${small.m.page_renderer_peak_mb} MB (final ${small.m.page_renderer_final_mb}), 66 stations ${big.m.page_renderer_peak_mb} MB (final ${big.m.page_renderer_final_mb})`);
+    const p = r => r.m.pressure && r.m.pressure.available ? `, after pressure ${r.m.pressure.after_mb}` : '';
+    console.log(`# memory flat: 21 stations peak ${small.m.page_renderer_peak_mb} MB${p(small)}; 66 stations peak ${big.m.page_renderer_peak_mb} MB${p(big)}`);
     assert.ok(big.m.peak_live_stations <= 5, big.out);
-    assert.ok(big.m.page_renderer_peak_mb < small.m.page_renderer_peak_mb * 1.4,
-      `21 stations: ${small.m.page_renderer_peak_mb} MB, 66 stations: ${big.m.page_renderer_peak_mb} MB`);
+    const held = r => (r.m.pressure && r.m.pressure.available) ? r.m.pressure.after_mb : r.m.page_renderer_peak_mb;
+    assert.ok(held(big) < held(small) * 1.4, `21 stations: ${held(small)} MB held, 66 stations: ${held(big)} MB held`);
   });
 
   for (const split of [false, true]) {

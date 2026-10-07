@@ -36,6 +36,12 @@ const DWELL = +opt('dwell', 1200), MAX_MB = opt('max-mb') ? +opt('max-mb') : nul
 // --slow path=ms holds one file back: the engine's script arriving late from a CDN is when the browser
 // paints whatever the parser has, before the engine runs (what the live window's paint gate prevents)
 const EDIT = argv.includes('--edit');
+// --pressure: after the walk, tell the page Chrome is under CRITICAL memory pressure (DevTools
+// Memory.simulatePressureNotification) and measure again. Memory that drops is purgeable cache (decoded
+// images); memory that stays is held. Needs remote debugging: where a managed browser refuses it, the
+// step reports itself unavailable and the rest of the run stands.
+const PRESSURE = argv.includes('--pressure');
+const CDP_PORT = PRESSURE ? 22000 + Math.floor(Math.random() * 3000) : null;
 const SLOW = opt('slow') ? { path: '/' + opt('slow').split('=')[0].replace(/^\//, ''), ms: +opt('slow').split('=')[1] || 1500 } : null;
 const CHROME = opt('chrome') || [process.env.DECK_BROWSER, '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium',
   '/usr/bin/chromium-browser', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].filter(Boolean).find(existsSync);
@@ -167,13 +173,17 @@ if (EDIT) {
 await new Promise(r => srv.listen(0, '127.0.0.1', r));
 const port = srv.address().port;
 const profile = mkdtempSync(join(tmpdir(), 'deck-mem-'));
-chrome = spawn(CHROME, ['--headless=new', '--hide-scrollbars', '--window-size=1920,1080', '--enable-precise-memory-info',
+// DECK_CHROME_FLAGS="--disable-gpu" reproduces a machine without a GPU (software raster, as on CI)
+const EXTRA = (process.env.DECK_CHROME_FLAGS || '').split(/\s+/).filter(Boolean);
+chrome = spawn(CHROME, [...EXTRA, ...(PRESSURE ? [`--remote-debugging-port=${CDP_PORT}`] : []), '--headless=new', '--hide-scrollbars', '--window-size=1920,1080', '--enable-precise-memory-info',
   '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, `http://127.0.0.1:${port}${PAGE}${EDIT ? '?edit=1' : ''}`], { stdio: 'ignore' });
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { try { chrome.kill(); } catch (e) {} try { rmSync(profile, { recursive: true, force: true }); } catch (e) {} process.exit(130); });
 const t0 = Date.now();
 const sampler = setInterval(() => { const r = treeRss(chrome.pid); if (r) samples.push({ t: Date.now() - t0, ...r }); }, 250);
 const limitMs = +opt('timeout', 15 * 60_000);
 while (!doneInfo && Date.now() - t0 < limitMs && chrome.exitCode === null) await new Promise(r => setTimeout(r, 200));
+let pressure = null;
+if (PRESSURE && doneInfo && !doneInfo.error) pressure = await simulatePressure();
 clearInterval(sampler);
 try { chrome.kill(); } catch (e) {}
 if (editSrv) try { editSrv.kill(); } catch (e) {}
@@ -181,6 +191,22 @@ srv.close();
 try { rmSync(profile, { recursive: true, force: true }); } catch (e) {}
 
 const MB = kb => (kb / 1024).toFixed(0);
+async function simulatePressure() {
+  const pageRss = () => { const r = treeRss(chrome.pid); return r ? Math.max(0, ...Object.values(r.renderers || {})) : null; };
+  try {
+    const list = await (await fetch(`http://127.0.0.1:${CDP_PORT}/json`)).json();
+    const page = list.find(t => t.type === 'page' && /127\.0\.0\.1/.test(t.url));
+    if (!page) return { available: false, why: 'no page target' };
+    const before = pageRss();
+    const ws = new WebSocket(page.webSocketDebuggerUrl);
+    await new Promise((ok, no) => { ws.onopen = ok; ws.onerror = no; });
+    let id = 0; const call = (method, params = {}) => new Promise(ok => { const my = ++id; ws.addEventListener('message', function h(ev) { const m = JSON.parse(ev.data); if (m.id === my) { ws.removeEventListener('message', h); ok(m); } }); ws.send(JSON.stringify({ id: my, method, params })); });
+    await call('Memory.simulatePressureNotification', { level: 'critical' });
+    await new Promise(r => setTimeout(r, 4000));
+    const after = pageRss(); ws.close();
+    return { available: true, before_mb: +(before / 1024).toFixed(0), after_mb: +(after / 1024).toFixed(0) };
+  } catch (e) { return { available: false, why: 'remote debugging refused (' + (e.message || e) + ')' }; }
+}
 if (!doneInfo) { console.log(`FAIL: the walk did not finish (${steps.length} stations reported)`); process.exit(1); }
 if (doneInfo.error) { console.log('FAIL: ' + doneInfo.error); process.exit(1); }
 console.log(`deck: ${DECK}`);
@@ -200,6 +226,7 @@ const res = { stations: doneInfo.stations, peak_tree_mb: +MB(peak('total')), pea
   long_frames: steps.reduce((a, s) => a + (s.long || 0), 0),
   boot_painted_images: steps[0] ? steps[0].painted : null,
   boot_mount_heard: steps[0] ? !!steps[0].heardMount : null,
+  pressure,
   nav: (() => { const n = steps.find(s => s.nav); if (!n) return null;
     const at = samples.filter(x => x.t <= n.at - t0); const pr = at.length ? Object.values(at.at(-1).renderers || {}) : [];
     return { items: n.navItems, iframes: n.frames, live_stations: n.live, dom_nodes: n.nodes, heap_mb: n.heap ? +(n.heap / 1048576).toFixed(0) : null,
@@ -215,6 +242,7 @@ const res = { stations: doneInfo.stations, peak_tree_mb: +MB(peak('total')), pea
   res.page_renderer_final_mb = page ? +MB(series[page].at(-1)) : null; }
 if (res.unmounted_arrivals.length) console.log(`FAIL: arrived on station(s) with no content: ${res.unmounted_arrivals.join(', ')}`);
 if (res.nav) console.log(`NAVIGATOR (all ${res.nav.items} slides scrolled into view): ${res.nav.iframes} iframes, ${res.nav.live_stations} live stations, ${res.nav.dom_nodes} DOM nodes, page renderer ${res.nav.page_renderer_mb} MB, tree ${res.nav.tree_mb} MB`);
+if (res.pressure) console.log(res.pressure.available ? `PRESSURE (critical, simulated): page renderer ${res.pressure.before_mb} MB -> ${res.pressure.after_mb} MB` : `PRESSURE: unavailable, ${res.pressure.why}`);
 console.log(`LOAD: ${res.boot_mb} MB in ${res.boot_requests} requests by the load event (whole walk: ${res.total_mb} MB)` +
   (res.boot_painted_images != null ? `; ${res.boot_painted_images} image(s) painted by then` : ''));
 console.log(`PAGE RENDERER: peak ${res.page_renderer_peak_mb} MB, final ${res.page_renderer_final_mb} MB · flights: median p95 frame ${res.flight_p95_ms} ms, ${res.long_frames} frames over 50 ms`);
