@@ -107,14 +107,21 @@ describe('live window (memory.mjs walks every station)', { concurrency: 3, skip 
   // Without a GPU (CI), Chrome keeps every decoded photo in purgeable cache until memory pressure, so
   // the resident size grows with photos SEEN; where it can, the test applies critical pressure and
   // compares what is left. Where it cannot (remote debugging refused), it compares the peaks.
-  test('memory stays flat as the deck grows (21 vs 66 stations)', async () => {
+  test('memory held stays near flat as the deck grows (21 vs 66 stations)', async () => {
     const [small, big] = await Promise.all([walk(heavyDeck(15), ['--pressure']), walk(heavyDeck(60), ['--pressure'])]);
     assert.equal(small.code, 0, small.out); assert.equal(big.code, 0, big.out);
     const p = r => r.m.pressure && r.m.pressure.available ? `, after pressure ${r.m.pressure.after_mb}` : '';
     console.log(`# memory flat: 21 stations peak ${small.m.page_renderer_peak_mb} MB${p(small)}; 66 stations peak ${big.m.page_renderer_peak_mb} MB${p(big)}`);
     assert.ok(big.m.peak_live_stations <= 5, big.out);
-    const held = r => (r.m.pressure && r.m.pressure.available) ? r.m.pressure.after_mb : r.m.page_renderer_peak_mb;
-    assert.ok(held(big) < held(small) * 1.4, `21 stations: ${held(small)} MB held, 66 stations: ${held(big)} MB held`);
+    if (small.m.pressure && small.m.pressure.available && big.m.pressure && big.m.pressure.available) {
+      // what stays after pressure may grow a little per station (each file's bytes in Chrome's resource
+      // cache, the frame, the rail dot), never by a decoded photo (8 MB here) per station seen
+      const perStation = (big.m.pressure.after_mb - small.m.pressure.after_mb) / 45;
+      assert.ok(perStation < 2.5, `held memory grows ${perStation.toFixed(1)} MB per station (a decoded photo is 8 MB)`);
+    } else {
+      assert.ok(big.m.page_renderer_peak_mb < small.m.page_renderer_peak_mb * 1.4,
+        `21 stations: ${small.m.page_renderer_peak_mb} MB, 66 stations: ${big.m.page_renderer_peak_mb} MB`);
+    }
   });
 
   for (const split of [false, true]) {
