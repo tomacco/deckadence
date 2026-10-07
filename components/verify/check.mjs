@@ -163,6 +163,17 @@ const missing = chrome.filter(([, test]) => !test());
 missing.forEach(([, , why]) => bad('device chrome:', why));
 if (!missing.length) ok('device chrome intact (full screen, swipe, mask, culling, rail window, phone CSS)');
 
+/* ---------- live window: memory stays flat as the deck grows ----------
+   An engine without it keeps every station laid out, painted and decoded (pitfalls.md trap 22).
+   An engine WITH it must also keep the plane from painting before it runs, or the browser decodes
+   every image while it is still parsing and the window saves nothing at load. Old engines only
+   get a WARN: they still work, they just do not scale. */
+if (!/function mountStation\s*\(/.test(js))
+  warn('live window: this engine keeps every station in memory (no mountStation) — long decks get slow and phones reload the tab; rebuild from the current template');
+else if (!/body:not\(\.deck-ready\)\s*#world\s*\{[^}]*visibility:\s*hidden/.test(markup) || !/classList\.add\(\s*['"]deck-ready['"]\s*\)/.test(js))
+  bad('live window: the plane can paint before the engine runs (no body:not(.deck-ready) #world gate) — every image in the deck decodes at load (trap 22)');
+else ok('live window: far stations leave the DOM, nothing paints before the engine');
+
 /* ---------- control-layer hooks (edit mode) ----------
  * Not a failure: a deck without window.Deckadence still presents. It just cannot be edited
  * in the browser (components/edit/, references/edit.md). */

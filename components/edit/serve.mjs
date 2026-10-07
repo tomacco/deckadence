@@ -28,6 +28,12 @@ const opt = (n, d) => { const i = args.indexOf(`--${n}`); return i >= 0 ? args[i
 const deckArg = args.find((a, i) => !a.startsWith('--') && !(i && args[i - 1].startsWith('--')));
 if (!deckArg || !existsSync(deckArg)) { console.error('usage: serve.mjs <deck.html> [--port 4800] [--author "Name"]'); process.exit(1); }
 const DECK = resolve(deckArg), ROOT = dirname(DECK), PAGE = basename(DECK), SIDE = R.sidecarPath(DECK);
+// A packed or streamed deck (components/stream/pack.mjs) is a publishing output: its stations sit inside
+// <template> or in other files, so edits would address the wrong markup. Edit the source; pack again.
+{ const src = readFileSync(DECK, 'utf8');
+  if (S.stations(src).some(st => st.el.attrs['data-src'] !== undefined || /^\s*<template\b[^>]*\bdata-station/i.test(S.inner(src, st.el)))) {
+  console.error('this deck is packed or streamed (pack.mjs output): edit its source deck, then pack again'); process.exit(1);
+} }
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = +opt('port', 4800);
 const AUTHOR = opt('author') || (() => { try { return execSync('git config user.name', { cwd: ROOT }).toString().trim(); } catch { return ''; } })() || process.env.USER || 'author';

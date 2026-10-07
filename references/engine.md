@@ -181,6 +181,49 @@ overview should read as a map of the talk.
   are fine. `railWindow()` budgets the rail as the inner width minus two `column-gap`s minus
   two copies of max(counter width, a readable name minimum).
 
+## Memory: the live window (long and photo-heavy decks)
+
+Every station on the plane used to stay laid out, painted and decoded for the whole talk. A
+68-station deck with 19 photos held ~426 MB in the renderer and ~306 MB on the GPU from the first
+slide, and phones reload a tab like that. The template now keeps a **live window**: the current
+station and `LIVE_SPAN` neighbours either side (2 on desktop, 1 on touch) hold their content; every
+other station keeps only its frame (position, size, tone class) and waits as text. Measured on the
+same deck: 255 MB renderer, 195 MB GPU, 554 DOM nodes instead of 2,588.
+
+- **Mount runs on every approach.** `mountStation(s)` puts the content back and runs the station's
+  setup: the scene's `mount(el)` and a `deck:mount` event. A scene that measures, inlines SVG or wires
+  listeners does it in `mount(el)` (it may return a Promise; navigation waits for it). Code that walks
+  every station ONCE at boot only sees the live ones (pitfalls.md trap 22). The first mount waits for
+  `DOMContentLoaded`, so listeners in later scripts hear it too. A `mount(el)` that throws or rejects
+  is reported in the console and breaks that station's setup only, never navigation. A streamed
+  station that fails to load (or takes longer than 10 s) shows a note in its frame and is fetched
+  again on the next approach; the camera is never held.
+- **Released on arrival, never before.** `settleLive()` runs after the reveal: neighbours mounted, far
+  stations released, the station you left released only once the camera no longer shows it.
+- **Nothing paints before the engine.** `body:not(.deck-ready) #world { visibility: hidden }` keeps the
+  browser from painting the plane while it parses (every station stacked at 0,0, every photo decoded)
+  when the engine's script is late. `check.mjs` fails an engine that has the window and not this gate.
+- **The overview never mounts the deck.** Dormant frames show their `data-poster` still if the deck was
+  packed with posters, and the station key labels either way.
+- **Opting out.** `<html data-live="all">` keeps every station mounted, for a deck whose code cannot
+  move into `mount(el)`. Edit mode switches to it (`setLive('all')`), one way for the session.
+
+### Publishing: packed and streamed decks
+
+`node components/stream/pack.mjs deck/index.html` writes `index.packed.html`: every station's content
+inside `<template data-station>`, so nothing in it is parsed, fetched or decoded until mounted. One
+file, works from `file://`. Add `--split` for `index.stream.html` plus `stations/<KEY>.html`: the
+page carries only the frames and the server streams each station as the camera approaches (the
+engine prefetches `LIVE_SPAN + 2` ahead; a failed fetch shows a note in the frame and retries on
+the next approach). `--posters` adds a small still per station for the overview. Author and edit
+the source; pack to publish (edit mode refuses a packed or streamed deck). On a 26-station photo deck the authored file fetched 19 MB before the
+first slide; packed and streamed fetched 0.2 MB.
+
+`node components/verify/memory.mjs deck/index.html` walks every station in headless Chrome and
+reports renderer and GPU memory, live stations, DOM nodes, bytes loaded before the first slide and
+frame pacing during flights. It reads the OS (`ps`), not DevTools, so it works where remote debugging
+is refused.
+
 ## Camera moves
 
 | Move | When | How |
@@ -277,7 +320,8 @@ the map, dots jump.
 
 The template exposes one object for layers that sit on top of the deck. Edit mode
 (`references/edit.md`) is the first. It carries the camera, the stations, `goto`, the reveal
-helpers (`splitLines`, `fitHeading`, `releaseClips`, `primeStation`, `revealStation`), `isPresenting()` and
+helpers (`splitLines`, `fitHeading`, `releaseClips`, `primeStation`, `revealStation`), the live window
+(`mountStation`, `setLive('all')`, `isLive(i)`, `liveSpan`), `isPresenting()` and
 `setInset(px)`, which shrinks the stage by a left inset (for a sidebar) and refits. A layer asks
 the engine through this object. It never re-implements the camera or the reveal. A layer
 that reveals a station itself calls `primeStation(s)` first, while the station is hidden. **Keep it when
