@@ -47,7 +47,8 @@ from making that deck work on the night.
 - **Long decks stay light.** Only the stations near the camera are in the page; the rest wait as
   text and come back on approach, so memory stays flat from slide 3 to slide 70.
   `components/stream/pack.mjs` publishes a deck whose stations load on demand, or stream from the
-  server one by one (`--split`); `components/verify/memory.mjs` measures a deck as it is presented.
+  server one by one (`--split`), with photos sized for each screen (`--images`);
+  `components/verify/memory.mjs` measures a deck as it is presented.
 - **Checks before you ship.** `components/verify/check.mjs` runs static gates on the file
   (layout staircase, keys, scene wiring, phone chrome). `components/verify/shoot.sh` takes a
   still screenshot of every slide, so Claude looks at the deck before calling it done.

@@ -29,6 +29,7 @@ COMPONENT · WHAT · SPLICE (where in the deck) · NEEDS (what it takes from win
 |---|---|
 | `verify/check.mjs` | after EVERY edit — static gates (staircase, ids, station keys, id-scoped CSS, syntax, scene wiring, flash guard) |
 | `verify/shoot.sh` | before declaring done — still-mode screenshot per station (`DECK_SHOT=phone` / `ipad` presets) |
+| `verify/compare.mjs` | two screenshots should match (`pack --images`): mean difference and share of moved pixels |
 | `verify/flash.mjs` | before declaring done — walks the deck in a real browser and fails on the final-state flash (pitfalls trap 2) |
 | `scenes/reveal.js` | a station should hold a question, then reveal the answer on the presenter's key |
 | `runtime/install.mjs` | a new deck, or an engine fix to pick up: copies the shared runtime beside the deck (`--check`: is it current?) |

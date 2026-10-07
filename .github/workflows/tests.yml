@@ -51,3 +51,5 @@ jobs:
         run: node --test tests/browser.test.mjs
       - name: live window (memory.mjs walks heavy, packed and streamed decks; each with the bug put back)
         run: node --test tests/live.test.mjs
+      - name: pack --images (variants, srcset choice per screen, screenshot tolerance)
+        run: node --test tests/images.test.mjs
