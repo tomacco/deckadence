@@ -155,7 +155,8 @@ Each file's header carries its own WHAT / SPLICE / NEEDS / WIRE. Read the one yo
 | `components/verify/shoot.sh` | before declaring done — a still screenshot per station (`DECK_SHOT=phone` too) |
 | `components/verify/flash.mjs` | before declaring done, and after touching ANY scene or fly — fails on the final-state flash |
 | `components/verify/memory.mjs` | a long or photo-heavy deck: memory, live stations and load per station, without DevTools |
-| `components/stream/pack.mjs` | publishing: stations load on demand (`--split` streams them from the server, `--posters` for the overview) |
+| `components/stream/pack.mjs` | publishing: stations load on demand (`--split` streams them from the server, `--posters` for the overview, `--images` sizes photos for the screen) |
+| `components/verify/compare.mjs` | two screenshots should look the same: mean difference and share of moved pixels, exits nonzero above a limit |
 | `components/scenes/reveal.js` | a station holds a question, then reveals on the presenter's key |
 | `components/runtime/install.mjs` | a new deck, or an engine fix to pick up (`--check` says whether a deck is current) |
 | `components/addons/site-iframe.js` | a station IS a real website, scrolled live |

@@ -3,7 +3,7 @@
 //
 //   node components/stream/pack.mjs deck/index.html            → deck/index.packed.html
 //   node components/stream/pack.mjs deck/index.html --split    → deck/index.stream.html + deck/stations/*.html
-//   … [--posters] [--out <file>]
+//   … [--posters] [--images] [--out <file>]
 //
 // WHAT  · The engine keeps only the stations near the camera in the DOM (template/starter.html, "live
 //         window"). An AUTHORED deck still ships every station's markup in the file, so the browser
@@ -17,6 +17,8 @@
 //                      browser will not fetch fragments from file://.
 //           --posters· a small still of every station (posters/<KEY>.png, via headless Chrome) set as
 //                      data-poster, so the overview shows the deck without mounting all of it.
+//           --images · every photo re-encoded (WebP, images/) at the sizes the deck shows it, with srcset
+//                      so each screen fetches and decodes only what it can show (components/stream/images.mjs).
 // RULES · The source deck is never modified: author and edit (edit mode) the source, pack to publish.
 //         Station markup moves byte-for-byte (components/edit/source.mjs offsets), nothing re-serialised.
 //         A deck whose engine predates the live window is refused: it would not mount packed stations.
@@ -31,6 +33,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { fileURLToPath } from 'node:url';
 import * as S from '../edit/source.mjs';
 import { inRuntime, inlineLocal, loaderFor } from '../runtime/runtime.mjs';
+import { report, rewrite, rightSize } from './images.mjs';
 
 export const fragmentName = st => {
   if (!st.key && !st.id) throw new Error('a station has neither data-key nor id: give it one so its fragment has a stable name');
@@ -82,18 +85,23 @@ const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(imp
 if (isMain) {
   const argv = process.argv.slice(2);
   const src = argv.find(a => !a.startsWith('--') && argv[argv.indexOf(a) - 1] !== '--out');
-  if (!src || !existsSync(src)) { console.error('usage: pack.mjs <deck.html> [--split] [--posters] [--out file]'); process.exit(2); }
-  const split = argv.includes('--split'), wantPosters = argv.includes('--posters');
+  if (!src || !existsSync(src)) { console.error('usage: pack.mjs <deck.html> [--split] [--posters] [--images] [--out file]'); process.exit(2); }
+  const split = argv.includes('--split'), wantPosters = argv.includes('--posters'), wantImages = argv.includes('--images');
   const SRC = resolve(src), DIR = dirname(SRC);
   const outArg = argv.includes('--out') ? argv[argv.indexOf('--out') + 1] : null;
   const OUT = resolve(outArg || join(DIR, basename(SRC, extname(SRC)) + (split ? '.stream.html' : '.packed.html')));
   if (dirname(OUT) !== DIR) { console.error('the packed deck must sit next to its source: its assets are referenced relative to it'); process.exit(2); }
   if (OUT === SRC) { console.error('--out would overwrite the source deck: the source stays the one you author and edit'); process.exit(2); }
   const html = readFileSync(SRC, 'utf8');
-  let posters = null;
+  let posters = null, sized = html, plan = null;
   if (wantPosters) posters = await makePosters(SRC, html);
+  if (wantImages) {
+    try { plan = await rightSize(SRC, html); } catch (e) { console.error('FAIL: ' + e.message); process.exit(1); }
+    sized = rewrite(html, plan);
+    console.log(`images: ${Object.keys(plan).length} photo(s) right-sized into images/\n` + report(plan).join('\n'));
+  }
   let res;
-  try { res = pack(html, { split, posters, load: loaderFor(SRC) }); } catch (e) { console.error('FAIL: ' + e.message); process.exit(1); }
+  try { res = pack(sized, { split, posters, load: loaderFor(SRC) }); } catch (e) { console.error('FAIL: ' + e.message); process.exit(1); }
   if (split) {
     mkdirSync(join(DIR, 'stations'), { recursive: true });
     for (const f of res.fragments) writeFileSync(join(DIR, 'stations', f.name), f.content);

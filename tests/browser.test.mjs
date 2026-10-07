@@ -2,12 +2,10 @@
 // REQUIRE_BROWSER=1 (CI sets it), in which case a missing browser is a failure.
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { ROOT, TEMPLATE, LANDING, scratchDeck, once, read, runAsync, findChrome } from './helpers.mjs';
+import { ROOT, TEMPLATE, LANDING, scratchDeck, once, read, runAsync, findChrome, dumpDom } from './helpers.mjs';
 import { pack } from '../components/stream/pack.mjs';
 import { loaderFor } from '../components/runtime/runtime.mjs';
 
@@ -47,26 +45,13 @@ describe('final-state flash (pitfalls.md trap 2)', { concurrency: true, skip }, 
   });
 });
 
-// The page's DOM after its scripts ran, read from a file:// URL. A managed Chrome may linger after it has
-// printed the DOM, so it is stopped as soon as the document is out.
-function dumpDom(file, profile, suffix = '') {
-  return new Promise(done => {
-    let out = '';
-    const p = spawn(chrome, ['--headless=new', '--disable-gpu', '--no-first-run', `--user-data-dir=${profile}`,
-      '--virtual-time-budget=8000', '--dump-dom', pathToFileURL(file).href + suffix], { stdio: ['ignore', 'pipe', 'ignore'] });
-    const guard = setTimeout(() => p.kill(), 90_000);
-    p.stdout.on('data', d => { out += d; if (/<\/html>\s*$/.test(out)) p.kill(); });
-    p.on('exit', () => { clearTimeout(guard); done(out); });
-  });
-}
-
 // D3: the single-file export presents from file://, alone, with no folder beside it and no server.
 describe('single-file export', { skip }, () => {
   test('presents from file://: the engine boots and mounts the start station', async () => {
     const src = scratchDeck(TEMPLATE, s => s.replace('https://cdn.jsdelivr.net/npm/animejs@4.4.1/dist/bundles/anime.umd.min.js', 'vendor/anime.umd.min.js'));
     const dir = mkdtempSync(join(tmpdir(), 'deck-file-')), alone = join(dir, 'talk.html');
     writeFileSync(alone, pack(read(src), { load: loaderFor(src) }).html);
-    const dom = await dumpDom(alone, join(dir, 'profile'));
+    const dom = await dumpDom(chrome, alone, join(dir, 'profile'));
     assert.match(dom, /<body[^>]*class="[^"]*\bdeck-ready\b/, dom.slice(0, 2000));
     assert.match(dom, /<section class="station" id="s1"[^>]*>\s*<div class="eyebrow"/);   // mounted, not a <template>
     assert.match(dom, /class="lineInner"/);                                                  // and its heading split
@@ -89,7 +74,7 @@ describe('runtime hooks', { skip }, () => {
     const deck = scratchDeck(TEMPLATE, s => s.replace('https://cdn.jsdelivr.net/npm/animejs@4.4.1/dist/bundles/anime.umd.min.js', 'vendor/anime.umd.min.js')
       .replace('</body>', probe));
     // ?still=1: every fly lands in the same tick, so the log does not depend on how fast the flight runs
-    const dom = await dumpDom(deck, join(mkdtempSync(join(tmpdir(), 'deck-hooks-')), 'profile'), '?still=1#RIGEL');
+    const dom = await dumpDom(chrome, deck, join(mkdtempSync(join(tmpdir(), 'deck-hooks-')), 'profile'), '?still=1#RIGEL');
     assert.match(dom, /data-log="arrive RIGEL,beat,leave RIGEL,arrive ALTAIR"/, dom.slice(0, 1500));
   });
 });

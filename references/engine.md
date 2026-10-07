@@ -263,6 +263,21 @@ the next approach). `--posters` adds a small still per station for the overview.
 the source; pack to publish (edit mode refuses a packed or streamed deck). On a 26-station photo deck the authored file fetched 19 MB before the
 first slide; packed and streamed fetched 0.2 MB.
 
+`--images` sizes the photos for the deck (`components/stream/images.mjs`). Memory goes to decoded
+pixels: a 2400×1600 photo holds 15 MB once shown, whatever its file size and however small its box.
+Headless Chrome lays the deck out, measures the width each local `<img>` needs on a fitted frame
+(natural × max(box/natural), so `object-fit: cover` crops count) and re-encodes it to WebP at 0.5×,
+1×, 1.5× and 2× of that width, keeping only the sizes smaller than the original, into `images/`.
+The packed deck gets `srcset` plus `sizes="min(W/1920·100vw, W/1080·100vh)"`, which is the width the
+image fills on that screen, so the browser fetches the smallest file that is still sharp. Photos
+shown at or above their own size keep the original on a 1080p screen; logos and large photos in
+small boxes gain the most. On the 68-station BizzYes deck (19 photos, every station mounted) the
+photos a 1080p screen decodes went from 142 MB to 92 MB; with software raster (as on CI) the renderer
+peak fell by about 90 MB. With GPU raster on a Mac the peak varies by ±55 MB between identical runs,
+which hides the change. The worst station screenshot moved by 0.9/255 on average
+(`components/verify/compare.mjs`). Chrome does the re-encoding, so no codec lives in this
+repo and no remote debugging is needed.
+
 `node components/verify/memory.mjs deck/index.html` walks every station in headless Chrome and
 reports renderer and GPU memory, live stations, DOM nodes, bytes loaded before the first slide and
 frame pacing during flights. It reads the OS (`ps`), not DevTools, so it works where remote debugging
