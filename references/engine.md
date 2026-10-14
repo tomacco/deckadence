@@ -284,6 +284,45 @@ spatial *flourish* per deck (an overview fly-through near the end) is usually en
 overview, hold 480 ms (the hold IS the beat), then dive in. It is a runtime fly like `dive`, so
 it primes, flips tone and reveals through the same `{ mid, done }` callbacks.
 
+## Transitions: slides that change in place
+
+The camera is one way to change station, not the only one. `data-transition` swaps frames where
+they stand: the destination is stacked on the current frame, both play keyframes (Web Animations
+API), and when they end the camera snaps to the destination, so the world, the overview, deep
+links and the live window all keep working.
+
+```html
+<html lang="en" data-deckadence="2" data-transition="fade">   <!-- every station -->
+<section class="station" data-key="LYRA" data-transition="push up 600">   <!-- this one -->
+<section class="station" data-key="ORION" data-transition="camera">   <!-- this one flies -->
+```
+
+- **Value:** `name [direction] [ms]`. The direction is the way the motion goes: `left` (the
+  default), `right`, `up`, `down`. A station's transition is how it is ENTERED; going back plays
+  the departing station's transition in reverse, so `←` undoes `→`.
+- **Built in:** `cut`, `fade`, `dip` (through black), `push`, `cover`, `uncover`, `wipe`, `iris`,
+  `zoom`, `blur`. Durations scale with `data-pace` and reduced motion like every other move.
+- **Precedence:** a station's `data-fly` (it flies), then its `data-transition`, then the one on
+  `<html>`, then the camera. A deck with no coordinates at all defaults to `fade`, and the engine
+  lays its stations out on a grid (the overview still has a map). Coordinates are all or nothing:
+  `check.mjs` fails a deck where only some stations have them.
+- **The arrival contract holds:** the destination is primed at departure, so it swaps in empty
+  and its reveal plays on arrival; tone flips at the midpoint. `flash.mjs` covers it.
+- **Add your own** on `Deckadence.transitions` before the first navigation. `in(dir)` and
+  `out(dir)` return keyframes for the arriving and the leaving frame (either may be left out);
+  the arriving frame paints on top unless `under: true`. Both frames end at rest, which is what
+  the camera snaps to. Keyframes may use `opacity`, `translate`, `scale`, `rotate` (about the
+  frame's centre), `clipPath` and `filter`; leave `transform` alone, it places the station.
+  ```js
+  Deckadence.transitions.flip = { duration: 800,
+    in:  () => [{ rotate: 'y 90deg', opacity: 0, offset: 0 }, { rotate: 'y 90deg', opacity: 0, offset: .5 }, { rotate: 'y 0deg', opacity: 1 }],
+    out: () => [{ rotate: 'y 0deg' }, { rotate: 'y -90deg', offset: .5 }, { rotate: 'y -90deg' }] };
+  ```
+  For what keyframes cannot say (a canvas, a shader), give `run({ from, to, dir, back, duration })`
+  returning a Promise; the engine stacks the frames before it and snaps the camera after it.
+  `check.mjs` fails a `data-transition` name that is neither built in nor registered.
+- `?still=1` jumps straight to the destination, like every camera move.
+
 ## Navigation & input (already wired in the template)
 
 - `→` / `Space` / `PageDown` = next · `←` / `PageUp` = prev

@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ROOT, TEMPLATE, LANDING, scratchDeck, once, read, runAsync, findChrome } from './helpers.mjs';
+import { ROOT, TEMPLATE, LANDING, scratchDeck, once, read, runAsync, findChrome, asSlides } from './helpers.mjs';
 import { pack } from '../components/stream/pack.mjs';
 import { loaderFor } from '../components/runtime/runtime.mjs';
 
@@ -23,6 +23,13 @@ describe('final-state flash (pitfalls.md trap 2)', { concurrency: true, skip }, 
     const r = await flash(scratchDeck(TEMPLATE));
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /no flashes/);
+  });
+
+  // In-place transitions stack the destination on the current frame: it must be primed there too, both ways.
+  test('a slide deck never flashes, through every kind of transition, forward and back', async () => {
+    const r = await flash(scratchDeck(TEMPLATE, asSlides({ LYRA: 'push', ORION: 'wipe up', DENEB: 'dip', RIGEL: 'iris', ALTAIR: 'cover down 500' })));
+    assert.equal(r.code, 0, r.out);
+    assert.match(r.out, /ok back → VEGA/);
   });
 
   test('the landing never flashes', async () => {

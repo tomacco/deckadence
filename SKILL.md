@@ -61,6 +61,11 @@ say out loud in review** — "fix LYRA" still means the same slide after a reord
 Stations advance DOWN or RIGHT only (monotone staircase; right = +2300, down = +1450).
 After every insert/delete, re-run the verification script in `references/engine.md`.
 
+The camera is optional. A deck with no `data-x`/`data-y` on any station is a slide deck: the
+engine lays it out and changes slides in place with a fade. `data-transition="push left"` (on a
+station, or on `<html>` for all of them) picks a classic transition instead of the camera;
+see "Transitions" in `references/engine.md`.
+
 ### 4 · Animate
 
 The generic intro covers most stations free: mark headings `data-split="lines"`, supporting

@@ -1,7 +1,7 @@
 // check.mjs: passes the shipped decks, and FAILS each class of broken deck it exists to catch.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TEMPLATE, LANDING, scratchDeck, once, check } from './helpers.mjs';
+import { TEMPLATE, LANDING, scratchDeck, once, check, asSlides } from './helpers.mjs';
 
 test('template passes the static gates', () => {
   const r = check(TEMPLATE);
@@ -59,4 +59,18 @@ test('data-fly="through-overview" is a runtime fly (it used to be an add-on spli
   const gone = check(scratchDeck(TEMPLATE, s => once(s, 'data-name="Thanks" data-x="6900" data-y="2900"', 'data-name="Thanks" data-x="6900" data-y="2900" data-fly="through-overview"'),
     { js: s => once(s, "dataset.fly === 'through-overview'", "dataset.fly === 'removed'") }));
   assert.match(gone.out, /FAIL data-fly="through-overview" is never handled/);
+});
+
+test('a deck without coordinates is a slide deck; its transitions must be ones the engine knows', () => {
+  const r = check(scratchDeck(TEMPLATE, asSlides({ LYRA: 'push up 600', ORION: 'camera' })));
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /ok no coordinates/);
+  assert.match(r.out, /ok transitions known \(push\)/);
+  const unknown = check(scratchDeck(TEMPLATE, asSlides({ LYRA: 'spin' })));
+  assert.match(unknown.out, /FAIL data-transition="spin" is neither built in nor registered/);
+  const registered = check(scratchDeck(TEMPLATE, s => asSlides({ LYRA: 'spin' })(s)
+    .replace('</body>', '<script>Deckadence.transitions.spin = { in: () => [{ rotate: "90deg" }, { rotate: "0deg" }] };</script>\n</body>')));
+  assert.equal(registered.code, 0, registered.out);
+  const half = check(scratchDeck(TEMPLATE, s => once(s, ' data-x="2300" data-y="0"', '')));
+  assert.match(half.out, /FAIL station s2: missing\/invalid data-x\|data-y/);
 });

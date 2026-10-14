@@ -161,3 +161,9 @@ body.invert-hud #swipehint { background: var(--bg); color: var(--ink); }
 #rotatehint .rh-nofs { display: none; }
 body.no-fullscreen #rotatehint .rh-fs { display: none; }
 body.no-fullscreen #rotatehint .rh-nofs { display: inline; }
+
+/* ---------- transitions (engine: playTransition) ----------
+   Two frames stacked mid-transition: a station with no background of its own would show the one
+   beneath through it, so it takes the canvas tone while the swap runs. :where() keeps this at zero
+   specificity, so any background a deck gives a station (.invert included) wins. */
+:where(.station.in-transition) { background-color: var(--bg); }

@@ -4,7 +4,7 @@
 // Run after EVERY edit. Exits nonzero on any failure, so it can gate a commit.
 //
 // Checks: station parse · monotone staircase · duplicate ids · station keys (data-key) ·
-//         engine syntax · scenes used vs registered · data-fly values vs handled · device
+//         engine syntax · scenes used vs registered · data-fly and data-transition values vs handled · device
 //         chrome (full screen, swipe, mask, culling, rail window, phone CSS) · flash guard
 //         (primeStation in goto, prep(el) on every scene) · CSS scoped
 //         to a positional #sN id · [data-key] selectors naming no station · unstyled classes.
@@ -43,21 +43,24 @@ const attr = (tag, n) => {
 };
 const stations = tags.map(t => ({
   tag: t, id: attr(t, 'id'), name: attr(t, 'data-name'), key: attr(t, 'data-key'),
-  x: Number(attr(t, 'data-x')), y: Number(attr(t, 'data-y')),
-  scene: attr(t, 'data-scene'), fly: attr(t, 'data-fly'),
+  x: Number(attr(t, 'data-x') ?? NaN), y: Number(attr(t, 'data-y') ?? NaN),   // a missing one is NaN, never 0
+  scene: attr(t, 'data-scene'), fly: attr(t, 'data-fly'), transition: attr(t, 'data-transition'),
 }));
+// No station with coordinates = a slide deck: the engine lays the stations out itself.
+const auto = stations.every(s => attr(s.tag, 'data-x') == null && attr(s.tag, 'data-y') == null);
+if (auto && stations.length) ok('no coordinates: the engine lays the stations out (slide deck)');
 
 // A station the regex cannot parse must never silently pass.
 if (!stations.length) bad('parsed 0 stations — is the class/attribute markup intact?');
 else ok(stations.length, 'stations parsed');
 for (const s of stations) {
   if (!s.id) bad('a station has no id (deep links and screenshots address stations BY ID)');
-  if (Number.isNaN(s.x) || Number.isNaN(s.y)) bad(`station ${s.id}: missing/invalid data-x|data-y`);
+  if (!auto && (Number.isNaN(s.x) || Number.isNaN(s.y))) bad(`station ${s.id}: missing/invalid data-x|data-y`);
 }
 
 /* ---------- monotone down/right staircase ---------- */
-let stair = true;
-for (let i = 1; i < stations.length; i++) {
+let stair = !auto;
+for (let i = 1; !auto && i < stations.length; i++) {
   const dx = stations[i].x - stations[i - 1].x, dy = stations[i].y - stations[i - 1].y;
   if (!((dx > 0 && dy === 0) || (dy > 0 && dx === 0))) {
     stair = false;
@@ -155,6 +158,19 @@ for (const f of flies) {
   if (!new RegExp(`dataset\\.fly\\s*===\\s*['"]${f}['"]`).test(js)) bad(`data-fly="${f}" is never handled in the engine`);
 }
 if (flies.length && !fail) ok(`flies handled (${flies.join(', ')})`);
+
+/* ---------- data-transition names: built in, or registered by the deck ---------- */
+// An unknown name logs a warning and the camera flies instead, which reads as "transitions don't work".
+const deckTransition = attr((html.match(/<html\b[^>]*>/i) || [''])[0], 'data-transition');
+const names = [...new Set([deckTransition, ...stations.map(s => s.transition)].filter(Boolean)
+  .map(v => v.trim().split(/\s+/)[0]).filter(n => n !== 'camera'))];
+const builtIn = (js.match(/const transitions = \{([\s\S]*?)\n  \};/) || [, ''])[1];
+for (const n of names) {
+  const known = new RegExp(`^\\s*${n}\\s*:`, 'm').test(builtIn)
+    || new RegExp(`transitions(?:\\.${n}|\\[['"]${n}['"]\\])\\s*=`).test(js);
+  if (!known) bad(`data-transition="${n}" is neither built in nor registered on Deckadence.transitions`);
+}
+if (names.length && !fail) ok(`transitions known (${names.join(', ')})`);
 
 /* ---------- device chrome: phone + iPad scaffolding is an INVARIANT ----------
  * The template ships full screen, swipe nav, the letterbox mask, station culling, the rail
