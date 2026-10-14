@@ -29,6 +29,10 @@ export function copyRuntime(fromDir, toDir, { js = s => s, css = s => s } = {}) 
   writeFileSync(join(to, 'deckadence.css'), css(read(join(from, 'deckadence.css'))));
 }
 
+/** The template as a slide deck: no coordinates, and `transitions` ({ KEY: 'push up' }) on its stations. */
+export const asSlides = (transitions = {}) => s => s.replace(/ data-x="\d+" data-y="\d+"/g, '')
+  .replace(/(<section[^>]*data-key="(\w+)")/g, (m, tag, key) => transitions[key] ? `${tag} data-transition="${transitions[key]}"` : tag);
+
 /** Replace exactly one occurrence, or throw: a mutation that silently misses would make a
  *  "the gate fails on X" test pass for the wrong reason. */
 export function once(s, find, replace) {

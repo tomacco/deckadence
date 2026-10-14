@@ -5,7 +5,7 @@
    Loads after the stations and before the deck's own scripts; those register scenes on
    Deckadence.scenes, and the first reveal waits for DOMContentLoaded, so every scene is in place. */
 (function () {
-  const RUNTIME = '2.0.0';
+  const RUNTIME = '2.1.0';
   const pin = document.documentElement.dataset.deckadence;
   if (pin !== RUNTIME.split('.')[0])
     console.error(`[deckadence] this deck is pinned to runtime ${pin || '(no data-deckadence)'} but runtime ${RUNTIME} is loaded: install the matching runtime (components/runtime/install.mjs)`);
@@ -32,8 +32,13 @@
 
   /* ---------- collect stations ---------- */
   const nodes = Array.from(document.querySelectorAll('.station'));
-  const stations = nodes.map(el => {
-    const x = +el.dataset.x, y = +el.dataset.y, zoom = +el.dataset.zoom || 1;
+  // A deck may leave out coordinates altogether (a plain slide deck, no world to plan): when NO
+  // station has data-x/data-y the engine lays them out on a grid itself (the overview still has a
+  // map), and the deck moves by transitions, a fade unless it says otherwise (see transitions).
+  const AUTO = nodes.every(el => el.dataset.x == null && el.dataset.y == null);
+  const stations = nodes.map((el, k) => {
+    const x = AUTO ? (k % 6) * 2300 : +el.dataset.x, y = AUTO ? Math.floor(k / 6) * 1450 : +el.dataset.y;
+    const zoom = +el.dataset.zoom || 1;
     el.style.transform = `translate(${x}px, ${y}px)`;       // place on the plane
     return { el, x, y, w: el.offsetWidth, h: el.offsetHeight, zoom,
              cx: x + el.offsetWidth / 2, cy: y + el.offsetHeight / 2,
@@ -343,6 +348,83 @@
       onUpdate: render, onComplete: () => busy = false });
   }
 
+  /* ---------- transitions: change slides in place, without the camera ----------
+     data-transition on a station (how it is entered), or on <html> for every station, swaps frames
+     where they stand instead of flying: the destination is stacked on the current frame, the two
+     play keyframes (Web Animations API) and the camera snaps to the destination when they end.
+     Value: "name [direction] [ms]", e.g. "push up 600"; the direction is the way the motion goes
+     (left|right|up|down, default left). "camera" flies (to opt one station out of a deck-wide
+     transition), and so does any station with a data-fly. Going BACK plays the departing station's
+     transition in reverse, so ← undoes →.
+     A transition is { duration, easing, under, in(dir), out(dir) }: in/out return the keyframes of
+     the arriving and the leaving frame (either may be left out); the arriving frame paints on top
+     unless `under` is set. For what keyframes cannot say (a canvas, a shader), give run(ctx), which
+     returns a Promise and gets { from, to, dir, back, duration } (the two station elements, stacked).
+     Both frames rest at their final state when it ends: that is what the camera snaps to. A deck
+     adds its own on Deckadence.transitions (references/engine.md, "Transitions"). */
+  const V = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
+  const shift = (d, k) => `${V[d][0] * k}% ${V[d][1] * k}%`;
+  const INSET = { left: 'inset(0 0 0 100%)', right: 'inset(0 100% 0 0)', up: 'inset(100% 0 0 0)', down: 'inset(0 0 100% 0)' };
+  const transitions = {
+    cut:     { duration: 0 },
+    fade:    { duration: 450, easing: 'ease', in: () => [{ opacity: 0 }, { opacity: 1 }] },
+    dip:     { duration: 900, easing: 'ease-in-out',          // through black
+               out: () => [{ filter: 'brightness(1)' }, { filter: 'brightness(0)', offset: .5 }, { filter: 'brightness(0)' }],
+               in: () => [{ opacity: 0, filter: 'brightness(0)' }, { opacity: 0, offset: .5 }, { opacity: 1, filter: 'brightness(0)', offset: .5 }, { opacity: 1, filter: 'brightness(1)' }] },
+    push:    { duration: 700, in: d => [{ translate: shift(d, -100) }, { translate: '0% 0%' }],
+               out: d => [{ translate: '0% 0%' }, { translate: shift(d, 100) }] },
+    cover:   { duration: 700, in: d => [{ translate: shift(d, -100) }, { translate: '0% 0%' }] },
+    uncover: { duration: 700, under: true, out: d => [{ translate: '0% 0%' }, { translate: shift(d, 100) }] },
+    wipe:    { duration: 700, in: d => [{ clipPath: INSET[d] }, { clipPath: 'inset(0 0 0 0)' }] },
+    iris:    { duration: 800, in: () => [{ clipPath: 'circle(0% at 50% 50%)' }, { clipPath: 'circle(72% at 50% 50%)' }] },
+    zoom:    { duration: 650, in: () => [{ opacity: 0, scale: .8 }, { opacity: 1, scale: 1 }] },
+    blur:    { duration: 700, easing: 'ease-out', out: () => [{ filter: 'blur(0px)' }, { filter: 'blur(40px)' }],
+               in: () => [{ opacity: 0, filter: 'blur(40px)' }, { opacity: 1, filter: 'blur(0px)' }] },
+  };
+  const DECK_TRANSITION = document.documentElement.dataset.transition || (AUTO ? 'fade' : '');
+  // How to get from station a to station b: { def, dir, ms }, or null when the camera flies.
+  function transitionFor(a, b, back) {
+    const owner = back ? a : b;
+    if (owner.el.dataset.fly) return null;
+    const [name, ...args] = (owner.el.dataset.transition || DECK_TRANSITION).trim().split(/\s+/);
+    if (!name || name === 'camera') return null;
+    const def = transitions[name];
+    if (!def) { console.warn(`[deckadence] unknown transition "${name}" on ${owner.key || owner.el.id}: the camera flies instead`); return null; }
+    const ms = args.find(t => /^\d+(ms)?$/.test(t));
+    return { def, dir: args.find(t => V[t]) || 'left', ms: ms ? parseInt(ms, 10) : (def.duration ?? 600) };
+  }
+  function snapTo(s) { cam.x = s.cx; cam.y = s.cy; cam.zoom = fitZoom(s); render(); maskToStation(s); }
+  let endTransition = null;
+  function playTransition(from, to, t, back, { mid, done }) {
+    const D = t.ms * MOTION;
+    if (STILL || !D) { snapTo(to); if (mid) mid(); if (done) done(); return; }
+    busy = true;
+    // The arriving frame stands on the leaving one; rotate/scale act about the frame's centre.
+    to.el.style.transform = `translate(${from.x}px, ${from.y}px)`;
+    [from, to].forEach(s => { s.el.style.visibility = ''; s.el.style.transformOrigin = `${from.x + s.w / 2}px ${from.y + s.h / 2}px`; s.el.classList.add('in-transition'); });
+    // Reversed, the roles swap: the departing station plays its own `in` backwards, and stays on top.
+    const inS = back ? from : to, outS = back ? to : from;
+    (t.def.under ? outS : inS).el.style.zIndex = 1;
+    const opts = { duration: D, easing: t.def.easing || 'cubic-bezier(.82,0,.18,1)', direction: back ? 'reverse' : 'normal', fill: 'both' };
+    const anims = [[inS, t.def.in], [outS, t.def.out]].filter(([, k]) => k).map(([s, k]) => s.el.animate(k(t.dir), opts));
+    const running = t.def.run ? Promise.resolve(t.def.run({ from: from.el, to: to.el, dir: t.dir, back, duration: D }))
+      : Promise.all(anims.map(a => a.finished));
+    const midTimer = mid && setTimeout(() => { mid(); mid = null; }, D * 0.5);
+    // One synchronous step, so no frame shows the stack undone before the camera has moved.
+    let over = false;
+    const end = endTransition = () => {
+      if (over) return; over = true;
+      endTransition = null; clearTimeout(midTimer);
+      anims.forEach(a => a.cancel());
+      [from, to].forEach(s => { s.el.style.zIndex = s.el.style.transformOrigin = ''; s.el.classList.remove('in-transition'); });
+      to.el.style.transform = `translate(${to.x}px, ${to.y}px)`;
+      snapTo(to); busy = false; updateCulling();
+      if (mid) mid();                         // ended early (a resize) before the midpoint
+      if (done) done();
+    };
+    running.then(end, e => { console.error('[deckadence] transition failed:', e); end(); });
+  }
+
   /* ---------- scene registry ----------
      A bespoke animated station registers { run(el), stop() } under a name and
      opts into it with data-scene="name". goto() stops EVERY scene on every
@@ -385,7 +467,10 @@
     // Same-station replay (Esc/↓): no flight to wait for, so reveal at once. Scenes were
     // stopped above and must never be left frozen mid-draw.
     if (!isNew) { setTone(i); flyTo({ x: s.cx, y: s.cy, zoom: fitZoom(s) }, opts); reveal(); return; }
-    if (s.el.dataset.fly === 'dive') flyDive(s, { mid, done: reveal });
+    // From the overview there is no frame to swap in place: the camera always flies back down.
+    const t = !wasOverview && transitionFor(stations[prev], s, i < prev);
+    if (t) playTransition(stations[prev], s, t, i < prev, { mid, done: reveal });
+    else if (s.el.dataset.fly === 'dive') flyDive(s, { mid, done: reveal });
     else if (s.el.dataset.fly === 'through-overview') flyThroughOverview(s, { mid, done: reveal });
     else flyTo({ x: s.cx, y: s.cy, zoom: fitZoom(s) }, { ...opts, mid, done: reveal });
   }
@@ -585,6 +670,7 @@
   stations.forEach((s, i) => s.el.addEventListener('click', () => { if (overview && !busy) goto(i); }));
 
   function refit() {
+    if (endTransition) endTransition();
     stations.forEach(s => { s.w = s.el.offsetWidth; s.h = s.el.offsetHeight; s.cx = s.x + s.w / 2; s.cy = s.y + s.h / 2; });
     railWindow(cur);
     if (overview) toOverview();
@@ -606,7 +692,7 @@
     setInset(px) { insetLeft = Math.max(0, +px || 0); refit(); },
     isPresenting: () => !!(document.fullscreenElement || document.webkitFullscreenElement),
     // for the deck's own scripts: its scenes, the shared motion scale, the intro and the steps
-    scenes: sceneRegistry, MOTION, EASE, primeIntro, playIntro, step, next, prev,
+    scenes: sceneRegistry, transitions, MOTION, EASE, primeIntro, playIntro, step, next, prev,
   };
 
   // Editing the hash on a loaded deck (#ORION, #s3) flies there. A hash that arrives while
