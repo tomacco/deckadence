@@ -296,6 +296,11 @@ export function reorder(html, order) {
     const floor = k ? list[k - 1].el.end : parent.openEnd;
     return { id: s.id, start: floor + noteStart(html.slice(floor, s.el.start)), end: s.el.end, tagStart: s.el.start, tagEnd: s.el.openEnd };
   });
+  // No station has data-x/data-y = a slide deck (the engine lays it out): only the ORDER changes,
+  // no coordinate is written. Some with and some without is refused: a slot there would be NaN.
+  const auto = list.every(s => s.el.attrs['data-x'] == null && s.el.attrs['data-y'] == null);
+  if (!auto && list.some(s => Number.isNaN(s.x) || Number.isNaN(s.y)))
+    return { error: 'some stations have no valid data-x/data-y: reorder by hand' };
   const slots = relayout(list);
   const byId = Object.fromEntries(blocks.map(b => [b.id, b]));
   let out = html.slice(0, blocks[0].start);
@@ -304,7 +309,7 @@ export function reorder(html, order) {
     let text = html.slice(b.start, b.end);
     const open = b.tagEnd - b.start, tagStart = b.tagStart - b.start;
     let tag = text.slice(tagStart, open);
-    tag = setAttr(setAttr(tag, 'data-x', slots[k].x), 'data-y', slots[k].y);
+    if (!auto) tag = setAttr(setAttr(tag, 'data-x', slots[k].x), 'data-y', slots[k].y);
     text = text.slice(0, tagStart) + tag + text.slice(open);
     out += text;
     if (k < order.length - 1) out += html.slice(blocks[k].end, blocks[k + 1].start);  // original gap k→k+1
