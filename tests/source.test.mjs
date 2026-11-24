@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as S from '../components/edit/source.mjs';
-import { TEMPLATE, read, scratchDeck, check } from './helpers.mjs';
+import { TEMPLATE, read, scratchDeck, check, once } from './helpers.mjs';
 import { writeFileSync } from 'node:fs';
 
 const html = read(TEMPLATE);
@@ -51,4 +51,30 @@ test('reorder keeps ids, keys and a valid staircase', () => {
 
 test('reorder refuses an order that drops a station', () => {
   assert.match(S.reorder(html, ['s1', 's2']).error, /every station exactly once/);
+});
+
+// A slide deck: stations with no camera coordinates (the engine lays them out).
+const bare = html.replace(/(<section class="station[^>]*?) data-x="\d+" data-y="\d+"/g, '$1');
+
+test('reorder on a deck without coordinates moves the stations and writes no coordinates', () => {
+  assert.equal(S.stations(bare).length, 6);
+  assert.doesNotMatch(bare, /<section[^>]*\sdata-[xy]=/);
+  const order = ['s1', 's3', 's2', 's4', 's5', 's6'];
+  const r = S.reorder(bare, order);
+  assert.ok(!r.error, r.error);
+  assert.ok(!r.html.includes('NaN'), 'a NaN was written into the deck');
+  assert.ok(!/<section[^>]*\sdata-[xy]=/.test(r.html), 'a coordinate attribute was written');
+  const tags = h => S.stations(h).map(s => h.slice(s.el.start, s.el.openEnd));
+  assert.deepEqual(S.stations(r.html).map(s => s.id), order);
+  assert.deepEqual(S.stations(r.html).map(s => s.key), ['VEGA', 'ORION', 'LYRA', 'DENEB', 'RIGEL', 'ALTAIR']);
+  assert.deepEqual(tags(r.html).sort(), tags(bare).sort());   // every open tag byte-identical: ids and keys kept
+  assert.equal(r.html.length, bare.length);
+  assert.ok(S.reorder(r.html, [...order].sort()).html === bare, 'reordering back restores the source byte for byte');
+});
+
+test('reorder refuses a deck where only some stations have coordinates', () => {
+  const mixed = once(bare, 'id="s2" data-key="LYRA" data-name="The claim"', 'id="s2" data-key="LYRA" data-name="The claim" data-x="2300" data-y="0"');
+  const r = S.reorder(mixed, ['s1', 's3', 's2', 's4', 's5', 's6']);
+  assert.match(r.error, /data-x\/data-y/);
+  assert.equal(r.html, undefined);
 });
