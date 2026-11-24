@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { ROOT, once, runAsync, findChrome } from './helpers.mjs';
 import { heavyDeck } from './heavy-deck.mjs';
 import { pack } from '../components/stream/pack.mjs';
+import { loaderFor } from '../components/runtime/runtime.mjs';
 
 const chrome = findChrome();
 if (!chrome && process.env.REQUIRE_BROWSER) throw new Error('REQUIRE_BROWSER is set but no Chrome was found');
@@ -23,10 +24,11 @@ async function walk(file, extra = []) {
   let m = null; try { m = JSON.parse(readFileSync(out, 'utf8')); } catch (e) {}
   return { ...r, m };
 }
-const allLive = s => once(s, '<html lang="en">', '<html lang="en" data-live="all">');
-const noPaintGate = s => once(s, '  body:not(.deck-ready) #world { visibility: hidden; }', '');
+const allLive = s => once(s, '<html lang="en" data-deckadence="2">', '<html lang="en" data-deckadence="2" data-live="all">');
+const noPaintGate = { css: s => once(s, 'body:not(.deck-ready) #world { visibility: hidden; }', '') };
 function packed(file, split) {
-  const res = pack(readFileSync(file, 'utf8'), { split });
+  // the single file inlines the runtime and anime.js: the walk below runs the export as shipped
+  const res = pack(readFileSync(file, 'utf8'), { split, load: loaderFor(file) });
   const dir = dirname(file), name = split ? 'index.stream.html' : 'index.packed.html';
   if (split) { mkdirSync(join(dir, 'stations'), { recursive: true }); res.fragments.forEach(f => writeFileSync(join(dir, 'stations', f.name), f.content)); }
   writeFileSync(join(dir, name), res.html);
@@ -53,7 +55,7 @@ describe('live window (memory.mjs walks every station)', { concurrency: 3, skip 
     const slow = f => runAsync(process.execPath, [join(ROOT, 'components/verify/memory.mjs'), f, '--dwell', '100',
       '--slow', 'vendor/anime.umd.min.js=2500', '--json', f + '.json'], { timeout: 300_000, env: { DECK_BROWSER: chrome } })
       .then(r => ({ ...r, m: JSON.parse(readFileSync(f + '.json', 'utf8')) }));
-    const [gated, open] = await Promise.all([slow(heavyDeck(PHOTOS)), slow(heavyDeck(PHOTOS, noPaintGate))]);
+    const [gated, open] = await Promise.all([slow(heavyDeck(PHOTOS)), slow(heavyDeck(PHOTOS, undefined, noPaintGate))]);
     assert.equal(gated.code, 0, gated.out); assert.equal(open.code, 0, open.out);
     assert.equal(gated.m.boot_painted_images, 0, gated.out);                  // the start station has no photo
     assert.ok(open.m.boot_painted_images >= PHOTOS / 2, `ungated painted ${open.m.boot_painted_images} photos at load\n${open.out}`);

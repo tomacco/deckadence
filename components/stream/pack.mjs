@@ -20,6 +20,9 @@
 // RULES · The source deck is never modified: author and edit (edit mode) the source, pack to publish.
 //         Station markup moves byte-for-byte (components/edit/source.mjs offsets), nothing re-serialised.
 //         A deck whose engine predates the live window is refused: it would not mount packed stations.
+//         The default (single-file) export also inlines every LOCAL script and stylesheet, the shared
+//         runtime (deckadence/) first among them, so the one file presents from file:// with no folder
+//         beside it. --split keeps them linked: a streamed deck is served with its folder anyway.
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -27,15 +30,19 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as S from '../edit/source.mjs';
+import { inRuntime, inlineLocal, loaderFor } from '../runtime/runtime.mjs';
 
 export const fragmentName = st => {
   if (!st.key && !st.id) throw new Error('a station has neither data-key nor id: give it one so its fragment has a stable name');
   return (st.key || st.id).replace(/[^A-Za-z0-9_-]/g, '_') + '.html';
 };
 
-/** Pure: source HTML → { html, fragments: [{ name, content }] }. Throws on a deck the engine cannot stream. */
-export function pack(html, { split = false, posters = null } = {}) {
-  if (!/function mountStation\s*\(/.test(html))
+/** Pure: source HTML → { html, fragments: [{ name, content }], inlined: [paths] }. Throws on a deck the engine
+ *  cannot stream. `load(path)` reads a file beside the deck; given it, the single-file export inlines local
+ *  scripts and stylesheets (and refuses when one is missing). */
+export function pack(html, { split = false, posters = null, load = null } = {}) {
+  const linksRuntime = inlineLocal(html, () => null, { only: inRuntime }).missing.some(p => p.endsWith('.js'));   // runtime 2+ has the window
+  if (!linksRuntime && !/function mountStation\s*\(/.test(html))
     throw new Error('this deck\'s engine has no live window (mountStation): rebuild it from the current template before packing');
   const list = S.stations(html);
   if (!list.length) throw new Error('no <section class="station"> found');
@@ -60,7 +67,14 @@ export function pack(html, { split = false, posters = null } = {}) {
     if (split) fragments.unshift({ name, content });
     out = out.slice(0, st.el.start) + open + body + out.slice(st.el.closeStart);
   }
-  return { html: out, fragments };
+  let inlined = [];
+  if (!split && load) {
+    const r = inlineLocal(out, load);
+    if (r.missing.length) throw new Error(`cannot inline ${r.missing.join(', ')}: not found beside the deck` +
+      (r.missing.some(inRuntime) ? ' (node components/runtime/install.mjs <deck>)' : ''));
+    ({ html: out, inlined } = r);
+  }
+  return { html: out, fragments, inlined };
 }
 
 /* ---------------------------------------------------------------- CLI */
@@ -79,7 +93,7 @@ if (isMain) {
   let posters = null;
   if (wantPosters) posters = await makePosters(SRC, html);
   let res;
-  try { res = pack(html, { split, posters }); } catch (e) { console.error('FAIL: ' + e.message); process.exit(1); }
+  try { res = pack(html, { split, posters, load: loaderFor(SRC) }); } catch (e) { console.error('FAIL: ' + e.message); process.exit(1); }
   if (split) {
     mkdirSync(join(DIR, 'stations'), { recursive: true });
     for (const f of res.fragments) writeFileSync(join(DIR, 'stations', f.name), f.content);
@@ -88,6 +102,7 @@ if (isMain) {
   const kb = n => (n / 1024).toFixed(0) + ' KB';
   console.log(`${basename(OUT)}: ${kb(Buffer.byteLength(res.html))} (source ${kb(Buffer.byteLength(html))})` +
     (split ? `, ${res.fragments.length} fragments in stations/` : ', every station inside <template data-station>') +
+    (res.inlined.length ? `, ${res.inlined.length} local scripts and stylesheets inlined` : '') +
     (posters ? `, ${Object.keys(posters).length} posters` : ''));
   if (split) console.log('serve the folder over http(s); a browser will not fetch stations/ from file://');
 }

@@ -90,13 +90,15 @@ your story  ──▶  stations on one plane      ──▶  a camera that moves
 
 | Piece | What it does |
 |---|---|
-| `template/starter.html` | A complete six-station deck: engine, HUD, navigation, phone layer, one animated SVG scene. Every build starts from a copy of it. |
+| `template/starter.html` | A complete six-station deck: design, HUD, one animated SVG scene. Every build starts from a copy of it. |
+| `template/deckadence/` | The engine: camera, navigation, live window, phone layer. One shared, versioned runtime that every deck links. |
 | `SKILL.md` | The workflow Claude follows: design direction, story, layout, animation, verification, review. |
 | `references/` | The craft in depth: engine internals, motion, SVG recipes, the design directions, edit mode, and the pitfalls list. |
-| `components/` | Code to splice in rather than retype: verification gates, a question-then-reveal scene, a fly-through, live-website stations, isometric scenes, and edit mode. |
+| `components/` | Code to splice in rather than retype: verification gates, a question-then-reveal scene, live-website stations, isometric scenes, edit mode, packing and the runtime installer. |
 
-The engine is about 500 lines of commented JavaScript inside the template. No framework and
-no build step.
+The engine is about 600 lines of commented JavaScript in `template/deckadence/`, shared by
+every deck and pinned by major version, so an engine fix reaches a deck without editing it.
+`pack.mjs` inlines it when you need the deck as one file. No framework and no build step.
 
 ## Rules it keeps
 

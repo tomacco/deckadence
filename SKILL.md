@@ -23,16 +23,20 @@ the whole point is decks that DON'T all look the same.
 ### 1 · Start from the template
 
 Copy `template/starter.html` (next to this file) into the user's project — `deck/index.html`
-is a good default — and set its `<title>`. It contains the complete working engine:
-world/camera/render, fitted 1920×1080 stations, HUD rail (windowed past ~25 stations),
-keyboard nav, a full-screen toggle (button + `F`), overview, deep links, the generic intro
-(line-rise + fades), one example scene (SVG stroke-draw + pulse), and the **phone/iPad
-layer**: swipe nav, letterbox mask, station culling, rotate hint, safe-area HUD. **Modify
-the template; never rebuild the engine from scratch, and never strip the chrome** — the
-static gate (`check.mjs`) fails a deck that lost it.
-Re-skin = swap the `:root` token block, the font `<link>`, and the `PACE` constant —
+is a good default — set its `<title>`, then install the engine beside it:
+`node components/runtime/install.mjs deck/index.html` (it creates `deck/deckadence/`). The
+engine is a shared, versioned runtime, not code in the deck: world/camera/render, fitted
+1920×1080 stations, HUD rail (windowed past ~25 stations), keyboard nav, a full-screen toggle
+(button + `F`), overview, deep links, the generic intro (line-rise + fades), the live window,
+and the **phone/iPad layer**: swipe nav, letterbox mask, station culling, rotate hint,
+safe-area HUD. The deck file holds the design, the stations and its own scenes (the template
+ships one: SVG stroke-draw + pulse). **Never edit `deckadence/` in a deck, never paste an
+engine into it, and never strip the HUD markup** — the static gate (`check.mjs`) fails a deck
+that lost it. An engine fix reaches the deck by running `install.mjs` again.
+Re-skin = swap the `:root` token block, the font `<link>`, and `data-pace` on `<html>` —
 nothing else. Tokens a direction doesn't list (e.g. `--line`, `--ease-expo`) keep their
-template defaults.
+template defaults. To share ONE file (mail, USB), `node components/stream/pack.mjs
+deck/index.html` writes `deck/index.packed.html` with the runtime inlined.
 
 ### 2 · Structure the narrative
 
@@ -88,7 +92,7 @@ and drag stations into a new order. All of it lands in the HTML and in
 `deck/index.review.json`. **At the start of every turn while a review is open, run
 `node components/edit/review.mjs deck/index.html`**, act on it, and answer each comment with a
 reply (attach a `patch` so their Apply button makes the change). Full loop:
-`references/edit.md`. Keep `window.Deckadence` when you restyle the engine; edit mode needs it.
+`references/edit.md`. Edit mode drives the deck through `window.Deckadence`, which the runtime provides.
 
 ## Hard rules (each one earned the hard way)
 
@@ -139,9 +143,9 @@ reply (attach a `patch` so their Apply button makes the change). Full loop:
 | `references/svg.md` | any diagram, flourish, node graph, or icon moment |
 | `references/pitfalls.md` | before declaring done; debugging weirdness; verification |
 | `references/edit.md` | the human wants to edit, comment on or reorder a deck in the browser; answering their comments |
-| `components/README.md` | the splice contract, if a component's own header is not enough |
+| `components/README.md` | the component contract, if a component's own header is not enough |
 
-## Components (copy-me code, not prose — splice into the single file)
+## Components (copy-me code, not prose — splice into the deck's own script)
 
 Each file's header carries its own WHAT / SPLICE / NEEDS / WIRE. Read the one you need.
 
@@ -153,7 +157,7 @@ Each file's header carries its own WHAT / SPLICE / NEEDS / WIRE. Read the one yo
 | `components/verify/memory.mjs` | a long or photo-heavy deck: memory, live stations and load per station, without DevTools |
 | `components/stream/pack.mjs` | publishing: stations load on demand (`--split` streams them from the server, `--posters` for the overview) |
 | `components/scenes/reveal.js` | a station holds a question, then reveals on the presenter's key |
-| `components/addons/fly-through-overview.js` | one station should arrive via the map |
+| `components/runtime/install.mjs` | a new deck, or an engine fix to pick up (`--check` says whether a deck is current) |
 | `components/addons/site-iframe.js` | a station IS a real website, scrolled live |
 | `components/svg/iso-box.js` | an isometric scene of PHYSICAL space (factory, building, line) |
 | `components/edit/serve.mjs` | the human wants to edit the deck themselves: serves it with edit mode (`?edit=1`) |

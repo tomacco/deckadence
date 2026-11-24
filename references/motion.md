@@ -151,7 +151,7 @@ function sA(scene, target, params) {
 Author at a comfortable pace, then tune the single constant during rehearsal. Scale
 durations rather than reaching for the animation object's `.speed` property — one constant
 in one place is auditable. Note `stagger(...)` object delays are not scaled — acceptable.
-(For the WHOLE DECK's pace, use the template's `PACE` constant instead — that's the design
+(For the WHOLE DECK's pace, use `data-pace` on `<html>` instead — that's the design
 direction's knob; `SPEED` here is per-scene.)
 
 ## Auto-play reel with presenter takeover
@@ -164,26 +164,24 @@ For a station that cycles through sub-beats (a concept reel, a feature tour):
 - **At the end, auto STOPS on the last beat. It does NOT loop.** A looping reel upstages the
   speaker. Manual advance past the end → `next()` (leave the station); manual back before
   the first → `prev()`.
-- The global keydown handler must intercept arrows while the scene is active and past its
-  intro, routing them to `advance()` instead of station navigation (the template's keydown
-  handler has a marked hook point). Skeleton:
+- The scene's `handleKey(dir)` takes the step while the scene is active and past its intro,
+  routing it to `advance()` instead of station navigation: the runtime's `step()` (arrows
+  AND swipes) offers every step to the current scene first, and `true` consumes it. Skeleton:
 
 ```js
 function advance(scene, dir, isAuto) {
   if (scene.cancelled) return;
   if (!isAuto) { scene.manual = true; clearTimeout(scene.autoTimer); }
   const n = scene.idx + dir;
-  if (n >= scene.seq.length) { if (!isAuto) next(); return; }   // past the end: auto STOPS, manual leaves
-  if (n < 0) { if (!isAuto) prev(); return; }
+  if (n >= scene.seq.length || n < 0) return false;              // past either end: auto STOPS, a manual step leaves
   scene.idx = n;
   showBeat(scene, scene.seq[n]);                                 // reset(beat) then play(scene, beat)
   if (!scene.manual && n < scene.seq.length - 1)
     scene.autoTimer = setTimeout(() => advance(scene, 1, true), BEAT_MS);
+  return true;
 }
-// in the keydown handler, BEFORE next()/prev():
-//   if (reelScene && !reelScene.cancelled && reelScene.titleDone) {
-//     advance(reelScene, e.key === 'ArrowLeft' ? -1 : 1, false); return;
-//   }
+// on the scene object (sceneRegistry.reel = { prep, run, stop, handleKey }):
+//   handleKey(dir) { return !!(reelScene && !reelScene.cancelled && reelScene.titleDone) && advance(reelScene, dir, false); }
 ```
 
 ## Choreography vocabulary

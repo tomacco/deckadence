@@ -15,16 +15,16 @@ test('landing passes the static gates', () => {
   assert.match(r.out, /every scene has prep\(el\) \(7\)/);
 });
 
-// Each case: a one-line mutation of the template, and the FAIL line it must produce.
+// Each case: a one-line mutation of the template (or, as { js }, of its runtime), and the FAIL line it must produce.
 const broken = [
   ['goto() stops priming the destination (the final-state flash)',
-    s => once(s, '    primeStation(s);\n    const reveal', '    const reveal'),
+    { js: s => once(s, '    primeStation(s);\n    const reveal', '    const reveal') },
     /FAIL flash guard: goto\(\) never calls primeStation/],
   ['a scene loses prep(el) (resets on arrival)',
     s => once(s, '    prep(el) {\n', '    setup(el) {\n'),
     /FAIL flash guard: scene "diagram" has no prep/],
   ['the engine has no primeStation at all (a pre-fix deck)',
-    s => s.replaceAll('primeStation', 'unusedHelper'),
+    { js: s => s.replaceAll('primeStation', 'unusedHelper') },
     /FAIL flash guard: no primeStation\(\)/],
   ['a station steps up instead of right/down',
     s => once(s, 'data-key="LYRA" data-name="The claim" data-x="2300" data-y="0"', 'data-key="LYRA" data-name="The claim" data-x="2300" data-y="-1450"'),
@@ -41,7 +41,7 @@ const broken = [
 ];
 for (const [name, mutate, expect] of broken) {
   test(`gate fails when ${name}`, () => {
-    const r = check(scratchDeck(TEMPLATE, mutate));
+    const r = check(typeof mutate === 'function' ? scratchDeck(TEMPLATE, mutate) : scratchDeck(TEMPLATE, undefined, mutate));
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, expect);
   });
@@ -50,4 +50,13 @@ for (const [name, mutate, expect] of broken) {
 test('CSS scoped to a positional #sN id is reported', () => {
   const r = check(scratchDeck(TEMPLATE, s => once(s, '</style>', '  #s4 .agenda { gap: 1px; }\n</style>')));
   assert.match(r.out, /scoped to station id #s4/);
+});
+
+test('data-fly="through-overview" is a runtime fly (it used to be an add-on spliced into goto())', () => {
+  const r = check(scratchDeck(TEMPLATE, s => once(s, 'data-name="Thanks" data-x="6900" data-y="2900"', 'data-name="Thanks" data-x="6900" data-y="2900" data-fly="through-overview"')));
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /ok flies handled \(through-overview\)/);
+  const gone = check(scratchDeck(TEMPLATE, s => once(s, 'data-name="Thanks" data-x="6900" data-y="2900"', 'data-name="Thanks" data-x="6900" data-y="2900" data-fly="through-overview"'),
+    { js: s => once(s, "dataset.fly === 'through-overview'", "dataset.fly === 'removed'") }));
+  assert.match(gone.out, /FAIL data-fly="through-overview" is never handled/);
 });
